@@ -38,6 +38,22 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Pin the container to Mexico City time. next.config.ts also sets
+# `process.env.TZ` as a module-level side effect, which covers `next dev`
+# and `next start` — but this image's CMD runs the standalone build's
+# `server.js` directly, which does NOT re-execute next.config.ts's code at
+# boot, so that assignment never happens here. Confirmed live 2026-08-13:
+# without this, the container's Node process resolves to UTC
+# (`Intl.DateTimeFormat().resolvedOptions().timeZone` → "UTC"), so every
+# `startOfToday()`-based preset in `lib/date-range.ts` ("Hoy"/"Ayer"/etc.)
+# silently computes against the wrong calendar day once UTC has rolled
+# over past Mexico City's local midnight (from ~6pm CDMX onward) — "Hoy"
+# resolves to tomorrow (no data yet) and "Ayer" resolves to today's
+# partial day. Setting TZ as a real container env var (read directly by
+# Node/V8 at process start, before any app code runs) fixes it
+# unconditionally, independent of whether next.config.ts's side effect
+# survives in this build output.
+ENV TZ=America/Mexico_City
 
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
