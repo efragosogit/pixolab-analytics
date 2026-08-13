@@ -1,5 +1,12 @@
 @AGENTS.md
 
+> **⚠️ See `TRANSITION-2026-08-12.md` in this same folder first** — this
+> folder is being moved to `/Volumes/1TB/www/pixolab-analytics` (top-level,
+> out from under `pixolab-dashboards/`) as part of a repo/folder rename:
+> the "pixolab-analytics" name is being reassigned from the OpenPanel
+> source folder to this dashboards app. That file has the deployment
+> status, current blockers, and Coolify access details.
+
 # Lumiservicios — custom analytics dashboard
 
 ## What this is
