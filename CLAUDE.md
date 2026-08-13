@@ -92,6 +92,22 @@ that did this if you need the exact verification steps).
     `POST .../envs` calls (or delete everything and recreate) instead.
     (4) Every env var Coolify shows in its API is actually a *pair* (prod
     + preview) — that's normal, not a duplication bug.
+- **Fixed 2026-08-13: deployed container ran in UTC, not Mexico City time,
+  silently shifting every date preset by a day.** `next.config.ts` pins
+  `process.env.TZ = "America/Mexico_City"` as a module-level side effect —
+  that only takes effect when `next.config.ts` itself is executed (`next
+  dev`, `next start`), but this `Dockerfile`'s `CMD` runs the **standalone**
+  build's `server.js` directly, which never re-imports `next.config.ts`, so
+  the assignment never ran in production. Confirmed live via `docker exec
+  ... node -e '...timeZone'` → `"UTC"`. Practical effect: any time after
+  ~6pm CDMX (once UTC has already rolled to the next calendar day),
+  `lib/date-range.ts`'s `startOfToday()`-based presets silently queried the
+  wrong day — "Hoy" resolved to tomorrow (0 visitors, nothing happened yet)
+  and "Ayer" resolved to today's partial day. Fixed by setting `ENV
+  TZ=America/Mexico_City` directly in the `Dockerfile`'s runner stage — a
+  real container env var Node/V8 reads at process start, independent of
+  whether `next.config.ts`'s side effect survives in this build output.
+  Verified fixed post-redeploy: same `docker exec` check → `"America/Mexico_City"`.
 
 It pulls from Pixolab's self-hosted **OpenPanel** instance
 (`https://analytics.pixolab.com.mx/api` — API only, see the domain note
