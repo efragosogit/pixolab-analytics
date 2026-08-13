@@ -1,11 +1,13 @@
 @AGENTS.md
 
-> **⚠️ See `TRANSITION-2026-08-12.md` in this same folder first** — this
-> folder is being moved to `/Volumes/1TB/www/pixolab-analytics` (top-level,
-> out from under `pixolab-dashboards/`) as part of a repo/folder rename:
-> the "pixolab-analytics" name is being reassigned from the OpenPanel
-> source folder to this dashboards app. That file has the deployment
-> status, current blockers, and Coolify access details.
+> **⚠️ See `TRANSITION-2026-08-12.md` in this same folder for the full
+> migration story** — this folder **was** `pixolab-dashboards/lumiservicios`
+> and is now the top-level `pixolab-analytics` repo (the name was
+> reassigned from the OpenPanel source folder, which is now
+> `pixolab-openpanel`). That move, the first Coolify deploy, and the
+> `analytics.pixolab.com.mx` domain cutover are all **done** as of
+> 2026-08-13 — see "Deployed 2026-08-13" below for current status. That
+> file still has Coolify access details worth keeping around.
 
 # Lumiservicios — custom analytics dashboard
 
@@ -61,23 +63,42 @@ that did this if you need the exact verification steps).
   is kept working, hardcoded to `client = "lumiservicios"`, so
   Lumiservicios' existing live GTM tag doesn't need to change until
   someone deliberately repoints it — see that file's doc comment.
-- **Not done yet**: this app has never been deployed anywhere (still
-  `pnpm dev`/localhost only) and OpenPanel still owns
-  `analytics.pixolab.com.mx`. Deploying this app there and moving
-  OpenPanel to `openpanel.pixolab.com.mx` is the next phase — critical
-  risk to know about before touching that domain: **every live client
-  site's GTM container has OpenPanel's API URL hardcoded in its tracking
-  snippet** (`apiUrl: 'https://analytics.pixolab.com.mx/api'`), so moving
-  that domain without a staged cutover silently breaks analytics for
-  every client until each site's GTM container is updated. Don't do the
-  domain move casually.
+- **Deployed 2026-08-13**: live at `https://analytics.pixolab.com.mx`,
+  Coolify project "Pixolab Analytics" (uuid `h6yhv2d5p7exnlpfi87efzq6`),
+  application uuid `j14m3wzqdi1bkgewxlv723me`, deployed from
+  `efragosogit/pixolab-analytics` (public repo — see
+  `TRANSITION-2026-08-12.md` for why: private repos on this Coolify need a
+  dedicated GitHub App installed per repo, no code in this codebase is
+  secret so public was the pragmatic choice). `Dockerfile` at repo root,
+  `build_pack: dockerfile`. OpenPanel's dashboard UI moved to
+  `openpanel.pixolab.com.mx` the same day; **its API deliberately stayed
+  at `analytics.pixolab.com.mx/api`** — every live client site's GTM
+  container has that URL hardcoded in its tracking snippet, so that
+  mapping stays until each site's GTM container is confirmed updated (not
+  done yet — Lumiservicios + NUMA are the two live sites as of this
+  writing; a third, Concepta, exists but has no events yet so nothing to
+  break there).
+  - **Coolify gotchas hit during this deploy, worth knowing for the next
+    one**: (1) Coolify injects every application env var as a Docker
+    build `ARG` by default — a multiline secret (the GSC service account
+    private key) broke the Dockerfile parser until every env var was
+    created with `is_buildtime: false` (none of them are actually needed
+    at `next build` time in this app). (2) A value containing literal
+    `\n` two-char sequences (not real newlines — see `lib/gsc.ts`'s own
+    comment on this) needs `is_literal: true` on creation or Coolify
+    re-wraps/mangles it. (3) The `POST /applications/{uuid}/envs/bulk`
+    endpoint does NOT upsert by key — it always creates new rows,
+    silently duplicating everything already present; use individual
+    `POST .../envs` calls (or delete everything and recreate) instead.
+    (4) Every env var Coolify shows in its API is actually a *pair* (prod
+    + preview) — that's normal, not a duplication bug.
 
 It pulls from Pixolab's self-hosted **OpenPanel** instance
-(`https://analytics.pixolab.com.mx`) as the source of truth for on-site
-behavior — traffic, conversions, funnels. Two other pieces of context that
-matter but live elsewhere:
+(`https://analytics.pixolab.com.mx/api` — API only, see the domain note
+above) as the source of truth for on-site behavior — traffic, conversions,
+funnels. Two other pieces of context that matter but live elsewhere:
 
-- **OpenPanel itself**: see `pixolab-analytics/CLAUDE.md` (usage/playbooks)
+- **OpenPanel itself**: see `pixolab-openpanel/CLAUDE.md` (usage/playbooks)
   and `pixolab-server/docs/` (infra — the instance runs a **custom-built**
   API image, not the official one, specifically so `/overview`, `/funnel`,
   `/pages/performance` etc. exist — see `pixolab-server/docs/inventory.md`
