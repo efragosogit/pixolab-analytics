@@ -272,6 +272,10 @@ export interface ClickhouseEventRow {
   name: string;
   created_at: string; // ClickHouse DateTime, "YYYY-MM-DD HH:mm:ss" (UTC)
   profile_id: string; // stable per-visitor id — used to dedupe actions into "leads" (people, not clicks)
+  path: string; // page the event fired on
+  region: string; // GeoIP-derived, English-ish names for MX states (e.g. "Mexico City", "Michoacán") — shown as-is, not translated
+  device: string; // "desktop" | "mobile" | "tablet" (whatever the SDK detected)
+  referrer_type: string; // "search" | "paid" | "social" | "direct" | "" (empty = no referrer)
 }
 
 /**
@@ -441,4 +445,94 @@ export async function getUniqueLeadCount(
     for (const event of events) profiles.add(event.profile_id);
   }
   return profiles.size;
+}
+
+export interface RankedCount {
+  label: string;
+  count: number;
+}
+
+export interface EventDetail {
+  totalEvents: number;
+  topPaths: RankedCount[]; // top 10 pages, by raw click count (a page a person clicks from twice counts twice — this is "where clicks happen", not "unique people per page")
+  topRegions: RankedCount[]; // top 10 MX states, same raw-count basis
+  hourly: { hour: number; count: number }[]; // 24 entries (0-23), America/Mexico_City local hour, zero-filled
+  peakHour: number; // 0-23, the single busiest local hour
+  byDevice: RankedCount[];
+  byReferrerType: RankedCount[];
+}
+
+function topN(counts: Map<string, number>, n: number): RankedCount[] {
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
+}
+
+function bump(counts: Map<string, number>, key: string) {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
+/**
+ * Breakdown of one event's raw occurrences by page, MX state, hour-of-day,
+ * device, and referrer type — built for the "Detalle del embudo de
+ * WhatsApp" section on `/conversiones`, but generic to any single event
+ * name. Deliberately raw-count based (not deduped by `profile_id` like
+ * `getUniqueLeadCount`) — this answers "where/when do clicks happen",
+ * which is naturally a count of actions, not people; a lead who clicks
+ * from the same page twice really did generate two data points about
+ * that page's effectiveness.
+ *
+ * Hour-of-day is bucketed in `America/Mexico_City` (not the raw UTC
+ * timestamp) since "what time do people click" is a local-business-hours
+ * question — see `next.config.ts`/`Dockerfile`'s TZ handling for the same
+ * reasoning applied elsewhere in this app.
+ */
+export async function getEventDetail(
+  creds: OpenPanelCreds,
+  range: DateRange,
+  eventName: string,
+): Promise<EventDetail> {
+  const events = await getAllEvents(creds, range, eventName);
+
+  const pathCounts = new Map<string, number>();
+  const regionCounts = new Map<string, number>();
+  const deviceCounts = new Map<string, number>();
+  const referrerCounts = new Map<string, number>();
+  const hourCounts = new Array(24).fill(0) as number[];
+  const hourFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Mexico_City",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+
+  for (const event of events) {
+    bump(pathCounts, event.path || "(sin ruta)");
+    bump(regionCounts, event.region || "Desconocido");
+    bump(deviceCounts, event.device || "Desconocido");
+    bump(referrerCounts, event.referrer_type || "Directo");
+
+    // ClickHouse's DateTime string has no "Z"/offset — Date() would parse
+    // it as local time to the *server process*, not necessarily UTC. Add
+    // the "Z" explicitly since these timestamps are documented (and
+    // verified) to be UTC.
+    const utcDate = new Date(`${event.created_at.replace(" ", "T")}Z`);
+    const localHour = Number(hourFormatter.format(utcDate));
+    hourCounts[localHour] += 1;
+  }
+
+  let peakHour = 0;
+  for (let h = 1; h < 24; h++) {
+    if (hourCounts[h] > hourCounts[peakHour]) peakHour = h;
+  }
+
+  return {
+    totalEvents: events.length,
+    topPaths: topN(pathCounts, 10),
+    topRegions: topN(regionCounts, 10),
+    hourly: hourCounts.map((count, hour) => ({ hour, count })),
+    peakHour,
+    byDevice: topN(deviceCounts, 6),
+    byReferrerType: topN(referrerCounts, 6),
+  };
 }

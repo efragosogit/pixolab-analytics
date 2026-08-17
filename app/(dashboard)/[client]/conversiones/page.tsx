@@ -1,8 +1,9 @@
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { FunnelIcon, TrendingDownIcon } from "lucide-react";
+import { ClockIcon, FunnelIcon, TrendingDownIcon } from "lucide-react";
 import {
   getDailyEventCounts,
+  getEventDetail,
   getFunnel,
   getOverview,
   getPagePerformance,
@@ -11,9 +12,9 @@ import {
 import { getAdsOverview, getSeoOverview } from "@/lib/mock-data";
 import { getClientConfig, type ClientConfig } from "@/lib/client-config";
 import { resolveRange, type ResolvedRange } from "@/lib/date-range";
-import { ErrorCard, PageHeader, Section, SourceStatusBadge } from "@/components/ui-kit";
+import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { JourneyIndicator, type JourneyStage } from "@/components/journey-indicator";
-import { StackedBars } from "@/components/charts";
+import { CategoryBars, RankedBars, StackedBars } from "@/components/charts";
 
 export const dynamic = "force-dynamic";
 
@@ -285,6 +286,107 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
   );
 }
 
+/**
+ * "Detalle del embudo de WhatsApp" — where/when WhatsApp clicks happen,
+ * one level deeper than the funnel's pass/fail count above. Raw-count
+ * based, not deduped by person (see `getEventDetail`'s doc comment) — the
+ * question here is "which pages/states/hours generate clicks", which is
+ * naturally a count of actions.
+ */
+async function WhatsappClickDetail({
+  config,
+  range,
+}: {
+  config: ClientConfig;
+  range: ResolvedRange;
+}) {
+  let detail: Awaited<ReturnType<typeof getEventDetail>> | null = null;
+  let error: string | null = null;
+  try {
+    detail = await getEventDetail(config.openpanel, range, "whatsapp_click");
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  }
+
+  if (error || !detail) {
+    return <ErrorCard message={`Detalle del embudo de WhatsApp: ${error}`} />;
+  }
+
+  const peakStart = String(detail.peakHour).padStart(2, "0");
+  const peakEnd = String((detail.peakHour + 1) % 24).padStart(2, "0");
+  const peakCount = detail.hourly[detail.peakHour]?.count ?? 0;
+  const peakShare = detail.totalEvents > 0 ? (peakCount / detail.totalEvents) * 100 : 0;
+
+  const hourlyChartData = detail.hourly.map((h) => ({
+    name: `${String(h.hour).padStart(2, "0")}h`,
+    count: h.count,
+  }));
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Detalle del embudo de WhatsApp
+        </h2>
+        <span className="tabular text-xs text-muted-foreground">
+          {detail.totalEvents.toLocaleString("es-MX")} clics en el rango
+        </span>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Section title="Páginas que más generan clics (top 10)">
+          <RankedBars rows={detail.topPaths.map((p) => ({ label: p.label, value: p.count }))} />
+        </Section>
+        <Section title="Estados con más clics (top 10)">
+          <RankedBars
+            rows={detail.topRegions.map((r) => ({ label: r.label, value: r.count }))}
+            color="var(--chart-2)"
+          />
+        </Section>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,220px)_1fr]">
+        <StatCard
+          label="Horario pico (hora CDMX)"
+          value={`${peakStart}:00–${peakEnd}:00`}
+          icon={<ClockIcon className="size-4" strokeWidth={2.25} />}
+        />
+        <Section
+          title="Clics por hora del día"
+          action={
+            <span className="tabular text-xs text-muted-foreground">
+              {peakShare.toFixed(0)}% del total en la hora pico
+            </span>
+          }
+        >
+          <CategoryBars
+            data={hourlyChartData}
+            dataKey="count"
+            nameKey="name"
+            colors={["var(--chart-1)"]}
+            height={180}
+          />
+        </Section>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Section title="Dispositivo">
+          <RankedBars
+            rows={detail.byDevice.map((d) => ({ label: d.label, value: d.count }))}
+            color="var(--chart-3)"
+          />
+        </Section>
+        <Section title="Canal de origen">
+          <RankedBars
+            rows={detail.byReferrerType.map((r) => ({ label: r.label, value: r.count }))}
+            color="var(--chart-4)"
+          />
+        </Section>
+      </div>
+    </div>
+  );
+}
+
 export default async function LeadsPage({
   params,
   searchParams,
@@ -346,6 +448,8 @@ export default async function LeadsPage({
             catálogo, no intención directa de contacto."
         />
       </section>
+
+      <WhatsappClickDetail config={config} range={range} />
 
       <Section title="Nota metodológica">
         <p className="text-sm leading-relaxed text-muted-foreground">
