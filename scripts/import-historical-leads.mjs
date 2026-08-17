@@ -23,8 +23,17 @@
  * HH:mm:ss" strings land on the right UTC instant instead of whatever the
  * DB server's default zone happens to be.
  *
- * Not idempotent — don't run the same file twice, there's no dedupe. This
- * is a run-once-by-hand tool, not something wired into the app.
+ * Idempotent as of 2026-08-17: skips a row if a lead with the same
+ * (client, source, raw->>'cf7db_id') already exists — safe to re-run
+ * against a fresh full CFDB7 export (doesn't need to be trimmed to "just
+ * the new rows" first), which is the realistic way this gets used: CFDB7
+ * exports don't support filtering by date range in its UI, and this
+ * script is the same one used to backfill gaps left by the GTM ingest tag
+ * not being live yet (see CLAUDE.md, "Fixed 2026-08-13: this app's own
+ * /api/* routes..." and the Leads row) — expect to run it again more than
+ * once until that tag is confirmed working. Rows with no `Id` column
+ * (cf7dbId null) can't be deduped this way and always insert — CFDB7
+ * exports always have Id, so this only matters for hand-built CSVs.
  */
 import fs from "node:fs";
 import pg from "pg";
@@ -112,6 +121,7 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 await pool.query("SET timezone = 'America/Mexico_City'");
 
 let inserted = 0;
+let skipped = 0;
 for (const r of dataRows) {
   const cf7dbId = idx.id !== -1 ? r[idx.id] : null;
   const date = r[idx.date];
@@ -121,6 +131,17 @@ for (const r of dataRows) {
   const asunto = idx.asunto !== -1 ? r[idx.asunto]?.trim() : "";
   const mensaje = idx.mensaje !== -1 ? r[idx.mensaje]?.trim() : "";
   const message = [asunto, mensaje].filter(Boolean).join(": ") || null;
+
+  if (cf7dbId) {
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM leads WHERE client = $1 AND source = $2 AND raw->>'cf7db_id' = $3 LIMIT 1`,
+      ["lumiservicios", source, cf7dbId],
+    );
+    if (existing.length > 0) {
+      skipped++;
+      continue;
+    }
+  }
 
   await pool.query(
     `INSERT INTO leads (client, source, name, email, phone, message, page_path, raw, created_at)
@@ -140,5 +161,7 @@ for (const r of dataRows) {
   inserted++;
 }
 
-console.log(`Imported ${inserted} historical leads (source=${source}) from ${csvPath}`);
+console.log(
+  `Imported ${inserted} historical leads (source=${source}) from ${csvPath}, skipped ${skipped} already-imported (dedupe by cf7db_id)`,
+);
 await pool.end();
