@@ -276,11 +276,12 @@ export interface ClickhouseEventRow {
 /**
  * `limit` is capped at 100 server-side (zEventsQuery) and the query has no
  * explicit ORDER BY, so this returns *up to* 100 matching rows for the
- * whole range, not guaranteed newest-first. Fine while lead volume is low
- * (tens/month); if it ever grows past ~100 events in a selected range,
- * counts will silently undercount — swap to a proper daily-aggregate
- * endpoint (or paginate) at that point instead of raising the limit
- * further (100 is the API's hard cap).
+ * whole range, not guaranteed newest-first, and does NOT tell you whether
+ * there were actually more than 100 matches (a full 100-row response is
+ * indistinguishable from "exactly 100 total"). Don't call this directly
+ * for anything that needs an accurate count over a date range — use
+ * `getAllEvents` below, which detects and works around the cap. This raw
+ * function still exists because `getAllEvents` is built on top of it.
  */
 export function getEvents(
   creds: OpenPanelCreds,
@@ -296,12 +297,6 @@ export function getEvents(
   );
 }
 
-export interface DailyEventCounts {
-  date: string;
-  total: number;
-  byEvent: Record<string, number>;
-}
-
 /** All calendar days in `range`, inclusive, as YYYY-MM-DD strings. */
 function enumerateDays(range: DateRange): string[] {
   const days: string[] = [];
@@ -313,29 +308,98 @@ function enumerateDays(range: DateRange): string[] {
   return days.length > 0 ? days : [range.startDate];
 }
 
+function addDaysToDateString(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * All events for one event name in `range`, working around `getEvents`'s
+ * 100-row-per-call cap by bisecting the date range whenever a call comes
+ * back at exactly the cap (the only observable sign of truncation, since
+ * the API gives no total count).
+ *
+ * Added 2026-08-17 after a real miss: the previous version of this file
+ * queried `whatsapp_click` and `form_submitted` together in one
+ * `getEvents` call, sharing one 100-row budget — WhatsApp's higher volume
+ * crowded out nearly all the form_submitted rows (3 of ~7 came back),
+ * silently deflating the "Leads" journey stage and the "Leads por día"
+ * chart. Splitting into one call per event name was a first fix, but
+ * turned out insufficient on its own: verified live that `whatsapp_click`
+ * ALONE already exceeds 100 raw events in a 30-day range (120, confirmed
+ * by manually querying two 15-day halves — the single-call version had
+ * been silently capped at 100 and nobody could tell from that response
+ * alone). Bisecting per event name, recursively, is what actually fixes
+ * this regardless of which single event type grows past the cap.
+ *
+ * Bottoms out at single-day ranges — a single calendar day with ≥100
+ * occurrences of one event is not handled (would need a real
+ * daily-aggregate endpoint instead of raw row fetches at that point) and
+ * logs a warning instead of recursing forever.
+ */
+async function getAllEvents(
+  creds: OpenPanelCreds,
+  range: DateRange,
+  eventName: string,
+): Promise<ClickhouseEventRow[]> {
+  const events = await getEvents(creds, range, [eventName]);
+  if (events.length < 100) return events;
+
+  if (range.startDate === range.endDate) {
+    console.warn(
+      `getAllEvents: "${eventName}" hit the 100-row cap on a single day (${range.startDate}) — can't bisect further, this count is an undercount`,
+    );
+    return events;
+  }
+
+  // Bisect on calendar days, inclusive on both halves.
+  const start = new Date(`${range.startDate}T00:00:00Z`);
+  const end = new Date(`${range.endDate}T00:00:00Z`);
+  const midOffset = Math.floor((end.getTime() - start.getTime()) / (2 * 86400000));
+  const mid = addDaysToDateString(range.startDate, midOffset);
+  const nextAfterMid = addDaysToDateString(mid, 1);
+
+  const [left, right] = await Promise.all([
+    getAllEvents(creds, { startDate: range.startDate, endDate: mid }, eventName),
+    getAllEvents(creds, { startDate: nextAfterMid, endDate: range.endDate }, eventName),
+  ]);
+  return [...left, ...right];
+}
+
+export interface DailyEventCounts {
+  date: string;
+  total: number;
+  byEvent: Record<string, number>;
+}
+
 /**
  * Daily counts for one or more events, zero-filled across every day in
  * `range` (not just days with activity) so charts render a continuous
- * series. Used for the leads journey chart — combines `whatsapp_click`
- * today, and will pick up `form_submitted` automatically the moment that
- * event starts flowing, no code change needed.
+ * series. Used for the leads journey chart (`whatsapp_click` +
+ * `form_submitted` combined) and the per-source funnels. Built on
+ * `getAllEvents` (see its doc comment) so it stays accurate as event
+ * volume grows past the underlying API's 100-row-per-call cap, not just
+ * at today's traffic level.
  */
 export async function getDailyEventCounts(
   creds: OpenPanelCreds,
   range: DateRange,
   eventNames: string[],
 ): Promise<DailyEventCounts[]> {
-  const events = await getEvents(creds, range, eventNames);
+  const perEvent = await Promise.all(eventNames.map((name) => getAllEvents(creds, range, name)));
   const byDay = new Map<string, DailyEventCounts>();
   for (const day of enumerateDays(range)) {
     byDay.set(day, { date: day, total: 0, byEvent: Object.fromEntries(eventNames.map((n) => [n, 0])) });
   }
-  for (const event of events) {
-    const day = event.created_at.slice(0, 10);
-    const bucket = byDay.get(day);
-    if (!bucket) continue; // event just outside the day boundary in local vs UTC edge cases
-    bucket.total += 1;
-    bucket.byEvent[event.name] = (bucket.byEvent[event.name] ?? 0) + 1;
+  for (const events of perEvent) {
+    for (const event of events) {
+      const day = event.created_at.slice(0, 10);
+      const bucket = byDay.get(day);
+      if (!bucket) continue; // event just outside the day boundary in local vs UTC edge cases
+      bucket.total += 1;
+      bucket.byEvent[event.name] = (bucket.byEvent[event.name] ?? 0) + 1;
+    }
   }
   return Array.from(byDay.values());
 }

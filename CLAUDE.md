@@ -143,6 +143,39 @@ that did this if you need the exact verification steps).
     client's side (see "Not yet done" below), not by this routing bug —
     but the routing bug was real, latent, and would have silently 404'd
     the moment that GTM step *was* done, so worth having fixed regardless.
+  - **Update same day, after the fact**: the client's live GTM container
+    was updated (their side, not this session's access) to actually call
+    `/ingest/leads/lumiservicios`, and the historical gap (2026-08-06 →
+    2026-08-17) was backfilled from a fresh CFDB7 export using
+    `scripts/import-historical-leads.mjs` (made idempotent the same day —
+    dedupes by `raw->>'cf7db_id'`, safe to re-run against a full export).
+    Verified end-to-end with two real live submissions on the site
+    afterward — both landed in Postgres with real field data (`raw` has no
+    `imported_from` marker, unlike backfilled rows). This is genuinely
+    live now, not still-pending — see the Leads row below.
+- **Fixed 2026-08-17: OpenPanel's `/events` endpoint has an undocumented,
+  silent 100-row-per-call cap with no total count and no ordering
+  guarantee — `getDailyEventCounts` (leads journey stage, "Leads por día"
+  chart, per-source funnels) was undercounting real conversions.** Caught
+  because a client-reported "100 leads" figure on `/conversiones`
+  (30-day range) turned out to be exactly `whatsapp_click`'s count alone —
+  suspicious given the stage is supposed to be `whatsapp_click +
+  form_submitted` combined. Root cause, in two layers: (1) the original
+  code queried both event names in one `/events` call, so they shared one
+  100-row budget — WhatsApp's much higher volume crowded out
+  `form_submitted` almost entirely (3 of ~7 rows came back). (2) Splitting
+  into one call per event name wasn't enough either: manually bisecting
+  the 30-day range into two 15-day `/events` calls for `whatsapp_click`
+  alone returned 34 + 86 = **120** — the "single" 100-row response had
+  itself been silently capped, not the true total. Fixed in
+  `lib/openpanel.ts`'s new `getAllEvents` — recursively bisects the date
+  range on any event name whenever a call comes back at exactly the
+  100-row cap (the only observable sign of truncation), until every
+  sub-range is safely under it. Verified against the live app: the
+  "Leads" journey stage went from a wrong 100 to a correct 127
+  (120 WhatsApp + 7 form, cross-checked by manually summing the daily
+  chart data) — real conversions had been getting lost from the dashboard,
+  not just a display quirk.
 
 It pulls from Pixolab's self-hosted **OpenPanel** instance
 (`https://analytics.pixolab.com.mx/api` — API only, see the domain note
@@ -179,7 +212,7 @@ Leads page" almost certainly means what's now `/conversiones`.
 |---|---|---|
 | Tráfico general | `/` | **Real data.** `/overview`, `/pages/top`, `/traffic/referrers`, `/traffic/devices`. Period-over-period deltas on every stat card. |
 | Performance | `/performance` | **Real data.** `/pages/performance` — title + SEO signal badges (high bounce / low engagement / good landing page) |
-| Leads | `/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB; new leads will start arriving automatically once Lumiservicios' live GTM container is updated to POST to `/ingest/leads/lumiservicios` (still pending as of 2026-08-13 — confirmed via the live `gtm.js`, this is the actual reason no lead has landed since the 2026-08-11 backfill, not a bug — see "Fixed 2026-08-13: this app's own `/api/*` routes are unreachable" above for a related routing bug that was also found and fixed while investigating this). `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. |
+| Leads | `/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB 2026-08-11, a further gap (2026-08-06 → 2026-08-17, caused by the GTM tag update having been pending, see "Fixed 2026-08-13: this app's own `/api/*` routes are unreachable" above) backfilled 2026-08-17 the same way; Lumiservicios' live GTM container now actually calls `/ingest/leads/lumiservicios` and new leads arrive automatically — verified live with two real submissions the same day. `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. |
 | Conversiones | `/conversiones` | **Real data**, 3 embudos: `screen_view → whatsapp_click` (real OpenPanel `/funnel`); `Formulario de contacto` and `Descarga de catálogo` (3-stage, hand-assembled from `/overview` + `/pages/performance` + `/events` — `/funnel` can't filter a step by path, see `StageFunnel`'s doc comment in `app/(dashboard)/conversiones/page.tsx`). Plus a top journey indicator (Impresiones → Tráfico → Leads, Impresiones still simulated) and a daily leads chart. |
 | SEO | `/seo` | **Real data.** Connected directly to Google Search Console via a service account (`lib/gsc.ts`) — deliberately *not* through OpenPanel's GSC integration, see "Bigger plan" above. |
 | Publicidad | `/ads` | **Real data.** Connected directly to Google Ads via OAuth (`lib/google-ads.ts`) — Google Ads has no service-account option, unlike GSC. Only Google Ads; Meta Ads still not connected. |
