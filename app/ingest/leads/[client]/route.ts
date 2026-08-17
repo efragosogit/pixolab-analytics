@@ -1,15 +1,31 @@
 /**
- * Per-client version of the leads webhook — receives lead data from a
- * client site's GTM Custom HTML tag (the same one already firing
- * `window.op('track', ...)` to OpenPanel), namespaced by `client` so one
- * shared dashboard deployment can ingest leads for every client site
- * instead of assuming Lumiservicios.
+ * Per-client leads webhook — receives lead data from a client site's GTM
+ * Custom HTML tag (the same one already firing `window.op('track', ...)`
+ * to OpenPanel), namespaced by `client` so one shared dashboard deployment
+ * can ingest leads for every client site instead of assuming Lumiservicios.
  *
- * The flat `app/api/leads/ingest/route.ts` (no `[client]` segment) is kept
- * working during the transition — it hardcodes `client = "lumiservicios"`
- * for Lumiservicios' existing live GTM tag, which doesn't need to change
- * until someone deliberately repoints it at this per-client path. New
- * clients should use this route from day one.
+ * Lives at `/ingest/leads/[client]`, deliberately NOT under `/api` —
+ * `analytics.pixolab.com.mx/api/*` is reserved for OpenPanel's own API
+ * (Traefik routes that whole prefix to the OpenPanel service on this
+ * domain, see CLAUDE.md's "Deployed 2026-08-13" section), so any route
+ * this app defines under `app/api/*` is unreachable on this domain,
+ * silently swallowed by that rule and 404'd by OpenPanel itself instead.
+ * Confirmed live 2026-08-13: this route used to live at
+ * `app/api/leads/ingest/[client]/route.ts` and a request to it returned
+ * OpenPanel's own `{"message":"Route POST:/leads/ingest/... not found"}`
+ * — never reached this app at all. This was also the reason no lead
+ * traffic showed up after the Phase 5 domain cutover: turned out moot
+ * this time because the GTM tag update was never actually pasted in
+ * either (verified against the live GTM container), but it would have
+ * 404'd even if it had been. Don't add any future route under `app/api/*`
+ * in this app while OpenPanel's API keeps that reservation on this domain.
+ *
+ * Only one ingest path now (this one) — the earlier flat
+ * `app/api/leads/ingest/route.ts` hardcoded to `client = "lumiservicios"`
+ * for "the existing live GTM tag" was removed at the same time as this
+ * move: that tag turned out to never have been updated to call either
+ * path, so there was nothing live left to preserve compatibility with.
+ * Every client, including Lumiservicios, uses this per-client route.
  *
  * Auth: a shared secret in the `x-ingest-secret` header — NOT a real
  * secret in the security sense (ships inside client-side JS on a public

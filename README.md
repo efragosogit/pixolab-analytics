@@ -54,7 +54,7 @@ Then fill in `.env.local`:
    see `../_infra/README.md` in this repo's parent folder for the actual
    project/credentials). `LEADS_INGEST_SECRET` is a random string the GTM
    tag sends back to prove it's not random internet noise (not real
-   security, see `app/api/leads/ingest/route.ts`'s doc comment).
+   security, see `app/ingest/leads/[client]/route.ts`'s doc comment).
 7. For login emails (invite + password reset): `RESEND_API_KEY` (from
    resend.com, needs `pixolab.com.mx` verified as a sending domain),
    `EMAIL_FROM`, and `APP_URL` (the base URL invite/reset links point at

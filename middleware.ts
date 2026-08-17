@@ -16,9 +16,11 @@ import { SESSION_COOKIE } from "@/lib/auth/constants";
 const PUBLIC_PATHS = ["/login", "/invite", "/forgot-password", "/reset-password"];
 
 // The GTM lead webhook has its own shared-secret auth (see
-// app/api/leads/ingest/route.ts) — it's called from the client's site,
-// never has a session cookie, and must stay reachable regardless.
-const PUBLIC_PREFIXES = ["/api/leads/ingest"];
+// app/ingest/leads/[client]/route.ts) — it's called from the client's
+// site, never has a session cookie, and must stay reachable regardless.
+// Deliberately NOT under /api — see that route's doc comment for why an
+// /api/* path is unreachable on this domain (OpenPanel owns that prefix).
+const PUBLIC_PREFIXES = ["/ingest/leads"];
 
 function isPublicPath(pathname: string): boolean {
   return (

@@ -57,12 +57,15 @@ that did this if you need the exact verification steps).
   who already has a password from a first invite) skips the password
   form entirely — see `lib/auth/users.ts`'s `acceptInvite`. Full schema
   reasoning is in `004_multi_tenant.sql`'s comments.
-- **Leads ingest webhook** is now per-client:
-  `app/api/leads/ingest/[client]/route.ts` (CORS origin looked up from
-  `clients.allowed_origin`). The old flat `app/api/leads/ingest/route.ts`
-  is kept working, hardcoded to `client = "lumiservicios"`, so
-  Lumiservicios' existing live GTM tag doesn't need to change until
-  someone deliberately repoints it — see that file's doc comment.
+- **Leads ingest webhook** is per-client:
+  `app/ingest/leads/[client]/route.ts` (CORS origin looked up from
+  `clients.allowed_origin`). **Lives at `/ingest/leads/[client]`, not under
+  `/api`** — see "Fixed 2026-08-13: `/api/*` routes unreachable" below for
+  why. The earlier flat `app/api/leads/ingest/route.ts` (hardcoded to
+  `client = "lumiservicios"`) was removed at the same time as that move —
+  turned out no live GTM tag had ever actually been repointed at either
+  path, so there was nothing to preserve compatibility with. Every client,
+  including Lumiservicios, uses the per-client route now.
 - **Deployed 2026-08-13**: live at `https://analytics.pixolab.com.mx`,
   Coolify project "Pixolab Analytics" (uuid `h6yhv2d5p7exnlpfi87efzq6`),
   application uuid `j14m3wzqdi1bkgewxlv723me`, deployed from
@@ -108,6 +111,38 @@ that did this if you need the exact verification steps).
   real container env var Node/V8 reads at process start, independent of
   whether `next.config.ts`'s side effect survives in this build output.
   Verified fixed post-redeploy: same `docker exec` check → `"America/Mexico_City"`.
+- **Fixed 2026-08-13: this app's own `/api/*` routes are unreachable on
+  `analytics.pixolab.com.mx`, silently swallowed by OpenPanel's API
+  reservation on that same domain+prefix.** Discovered while investigating
+  a "new leads aren't showing up" report. Root cause: Traefik's routing
+  rule for OpenPanel's API service is `Host(analytics.pixolab.com.mx) &&
+  PathPrefix(/api)` (see "Deployed 2026-08-13" above — deliberately kept
+  so client GTM containers wouldn't break), which is *more specific* than
+  this app's own `Host(analytics.pixolab.com.mx) && PathPrefix(/)` rule —
+  Traefik's default longest-match-wins behavior sends every
+  `analytics.pixolab.com.mx/api/*` request to OpenPanel's API container
+  unconditionally, never to this Next.js app, regardless of whether this
+  app defines a route there. Confirmed live: a request to the (now-former)
+  `app/api/leads/ingest/[client]/route.ts` at
+  `analytics.pixolab.com.mx/api/leads/ingest/lumiservicios` returned
+  OpenPanel's own 404 JSON (`{"message":"Route POST:/leads/ingest/... not
+  found"}`), never reached this app's code at all. Fixed by moving the
+  leads webhook to `app/ingest/leads/[client]/route.ts` (`/ingest/leads/…`,
+  outside `/api` entirely) — see that file's doc comment. **Any future
+  route added under `app/api/*` in this app will hit the exact same wall
+  as long as OpenPanel's API keeps its `/api` reservation on this domain**
+  (see the not-yet-done GTM migration in "Not yet done" below) — don't put
+  new API routes there; use a different top-level segment.
+  - Turned out this specific bug hadn't actually broken anything yet: the
+    live GTM container on lumiservicios.com was checked directly (fetched
+    its published `gtm.js`) and confirmed it **never got updated** to call
+    either ingest path in the first place — still only the original
+    `window.op('track', ...)` → OpenPanel calls from 2026-08-06. So the
+    reported "new leads aren't showing up" was actually caused by the GTM
+    tag update always having been a manual step still pending on the
+    client's side (see "Not yet done" below), not by this routing bug —
+    but the routing bug was real, latent, and would have silently 404'd
+    the moment that GTM step *was* done, so worth having fixed regardless.
 
 It pulls from Pixolab's self-hosted **OpenPanel** instance
 (`https://analytics.pixolab.com.mx/api` — API only, see the domain note
@@ -144,7 +179,7 @@ Leads page" almost certainly means what's now `/conversiones`.
 |---|---|---|
 | Tráfico general | `/` | **Real data.** `/overview`, `/pages/top`, `/traffic/referrers`, `/traffic/devices`. Period-over-period deltas on every stat card. |
 | Performance | `/performance` | **Real data.** `/pages/performance` — title + SEO signal badges (high bounce / low engagement / good landing page) |
-| Leads | `/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB; new leads will start arriving automatically once the dashboard is deployed and the GTM tag is updated to POST to `/api/leads/ingest`. `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. |
+| Leads | `/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB; new leads will start arriving automatically once Lumiservicios' live GTM container is updated to POST to `/ingest/leads/lumiservicios` (still pending as of 2026-08-13 — confirmed via the live `gtm.js`, this is the actual reason no lead has landed since the 2026-08-11 backfill, not a bug — see "Fixed 2026-08-13: this app's own `/api/*` routes are unreachable" above for a related routing bug that was also found and fixed while investigating this). `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. |
 | Conversiones | `/conversiones` | **Real data**, 3 embudos: `screen_view → whatsapp_click` (real OpenPanel `/funnel`); `Formulario de contacto` and `Descarga de catálogo` (3-stage, hand-assembled from `/overview` + `/pages/performance` + `/events` — `/funnel` can't filter a step by path, see `StageFunnel`'s doc comment in `app/(dashboard)/conversiones/page.tsx`). Plus a top journey indicator (Impresiones → Tráfico → Leads, Impresiones still simulated) and a daily leads chart. |
 | SEO | `/seo` | **Real data.** Connected directly to Google Search Console via a service account (`lib/gsc.ts`) — deliberately *not* through OpenPanel's GSC integration, see "Bigger plan" above. |
 | Publicidad | `/ads` | **Real data.** Connected directly to Google Ads via OAuth (`lib/google-ads.ts`) — Google Ads has no service-account option, unlike GSC. Only Google Ads; Meta Ads still not connected. |
