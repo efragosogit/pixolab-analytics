@@ -271,6 +271,7 @@ export function getLiveVisitors(creds: OpenPanelCreds) {
 export interface ClickhouseEventRow {
   name: string;
   created_at: string; // ClickHouse DateTime, "YYYY-MM-DD HH:mm:ss" (UTC)
+  profile_id: string; // stable per-visitor id — used to dedupe actions into "leads" (people, not clicks)
 }
 
 /**
@@ -381,6 +382,16 @@ export interface DailyEventCounts {
  * `getAllEvents` (see its doc comment) so it stays accurate as event
  * volume grows past the underlying API's 100-row-per-call cap, not just
  * at today's traffic level.
+ *
+ * Counts **unique people** (`profile_id`), not raw actions — a visitor
+ * who clicks WhatsApp 3 times on the same day counts once that day, same
+ * definition `/funnel` uses for its own conversion counts (a "lead" is a
+ * person, not a count of their clicks). Dedup is scoped per (day, event
+ * name): the same person converting on two different days counts once on
+ * each — for a range-wide unique-person total (e.g. a single "Leads" KPI
+ * for the whole period, not a daily breakdown), use `getUniqueLeadCount`
+ * instead; summing this function's daily numbers will not generally equal
+ * that total, same way daily-active-users don't sum to monthly-active-users.
  */
 export async function getDailyEventCounts(
   creds: OpenPanelCreds,
@@ -392,14 +403,42 @@ export async function getDailyEventCounts(
   for (const day of enumerateDays(range)) {
     byDay.set(day, { date: day, total: 0, byEvent: Object.fromEntries(eventNames.map((n) => [n, 0])) });
   }
+  const seenPerDayEvent = new Set<string>(); // `${day}|${eventName}|${profileId}`
   for (const events of perEvent) {
     for (const event of events) {
       const day = event.created_at.slice(0, 10);
       const bucket = byDay.get(day);
       if (!bucket) continue; // event just outside the day boundary in local vs UTC edge cases
+      const dedupeKey = `${day}|${event.name}|${event.profile_id}`;
+      if (seenPerDayEvent.has(dedupeKey)) continue;
+      seenPerDayEvent.add(dedupeKey);
       bucket.total += 1;
       bucket.byEvent[event.name] = (bucket.byEvent[event.name] ?? 0) + 1;
     }
   }
   return Array.from(byDay.values());
+}
+
+/**
+ * Total unique people (`profile_id`) who did any of `eventNames` at least
+ * once across the whole `range` — the range-wide counterpart to
+ * `getDailyEventCounts`'s per-day dedup (see its doc comment for why the
+ * two don't sum to the same number). This is the number to show for a
+ * single "leads generated this period" headline: matches `/funnel`'s own
+ * definition of a conversion (one converting person), and is what a
+ * "lead" means everywhere else in this app (a prospect, not an action
+ * count) — used for the journey indicator's "Leads" stage and each
+ * per-source funnel's final stage.
+ */
+export async function getUniqueLeadCount(
+  creds: OpenPanelCreds,
+  range: DateRange,
+  eventNames: string[],
+): Promise<number> {
+  const perEvent = await Promise.all(eventNames.map((name) => getAllEvents(creds, range, name)));
+  const profiles = new Set<string>();
+  for (const events of perEvent) {
+    for (const event of events) profiles.add(event.profile_id);
+  }
+  return profiles.size;
 }

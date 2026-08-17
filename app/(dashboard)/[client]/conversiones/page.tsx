@@ -1,7 +1,13 @@
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { FunnelIcon, TrendingDownIcon } from "lucide-react";
-import { getDailyEventCounts, getFunnel, getOverview, getPagePerformance } from "@/lib/openpanel";
+import {
+  getDailyEventCounts,
+  getFunnel,
+  getOverview,
+  getPagePerformance,
+  getUniqueLeadCount,
+} from "@/lib/openpanel";
 import { getAdsOverview, getSeoOverview } from "@/lib/mock-data";
 import { getClientConfig, type ClientConfig } from "@/lib/client-config";
 import { resolveRange, type ResolvedRange } from "@/lib/date-range";
@@ -174,15 +180,16 @@ async function PageFormFunnel({
   let error: string | null = null;
 
   try {
-    const [overview, pages, daily] = await Promise.all([
+    const [overview, pages, conversions] = await Promise.all([
       getOverview(config.openpanel, range),
       getPagePerformance(config.openpanel, range, 100),
-      getDailyEventCounts(config.openpanel, range, [conversionEventName]),
+      // Unique converting people, not raw action count — see
+      // getUniqueLeadCount's doc comment.
+      getUniqueLeadCount(config.openpanel, range, [conversionEventName]),
     ]);
 
     const totalSessions = overview.summary.total_sessions;
     const pageSessions = pages.pages.find((p) => p.path === pagePath)?.sessions ?? 0;
-    const conversions = daily.reduce((sum, d) => sum + d.total, 0);
 
     stages = [
       { label: "Visitas totales", value: totalSessions },
@@ -214,9 +221,14 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
   let error: string | null = null;
 
   try {
-    const [overview, daily] = await Promise.all([
+    const [overview, daily, leads] = await Promise.all([
       getOverview(config.openpanel, range),
       getDailyEventCounts(config.openpanel, range, LEAD_EVENTS),
+      // Unique converting people across the whole range — deliberately
+      // NOT `daily`'s per-day counts summed together, which would
+      // double-count anyone who converted on more than one day. See
+      // getUniqueLeadCount's doc comment.
+      getUniqueLeadCount(config.openpanel, range, LEAD_EVENTS),
     ]);
     // Impresiones: no ad/GSC account connected yet, so this stage is
     // simulated — spend-derived ad impressions + SEO impressions, the same
@@ -224,7 +236,6 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
     const ads = getAdsOverview(config.slug, range);
     const seo = getSeoOverview(config.slug, range);
     const impressions = ads.impressions + seo.impressions;
-    const leads = daily.reduce((sum, d) => sum + d.total, 0);
 
     stages = [
       {
@@ -241,7 +252,7 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
       {
         label: "Leads",
         value: leads,
-        hint: "Clics WhatsApp + formularios (OpenPanel)",
+        hint: "Personas únicas: WhatsApp + formularios (OpenPanel)",
       },
     ];
     dailyChartData = daily.map((d) => ({
@@ -262,9 +273,11 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
       <JourneyIndicator stages={stages} />
       <Section title="Leads por día">
         <p className="-mt-1 mb-3 text-xs text-muted-foreground">
-          Conteo de eventos de conversión (clic WhatsApp + formulario de contacto), no
-          incluye descargas de catálogo ni visitantes únicos — para tasa de conversión
-          por visitante ver los embudos abajo.
+          Personas únicas por día (clic WhatsApp + formulario de contacto) — la misma
+          persona convirtiendo en más de un día se cuenta en cada uno, por eso la suma
+          de las barras no coincide exactamente con el total de arriba. No incluye
+          descargas de catálogo — para tasa de conversión por visitante ver los
+          embudos abajo.
         </p>
         <StackedBars data={dailyChartData} series={LEAD_SERIES} height={220} />
       </Section>
