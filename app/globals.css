@@ -175,4 +175,39 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+
+  /*
+   * Loading-skeleton shimmer — a soft highlight band sweeping across a
+   * `--muted` block, used by components/skeletons.tsx + every route's
+   * loading.tsx. `color-mix()` blends against `--foreground` so the
+   * highlight tracks light/dark automatically instead of a hardcoded
+   * lighten/darken value that would look wrong in one mode.
+   */
+  .skeleton {
+    background-image: linear-gradient(
+      100deg,
+      var(--muted) 30%,
+      color-mix(in oklab, var(--muted) 55%, var(--foreground) 12%) 50%,
+      var(--muted) 70%
+    );
+    background-size: 250% 100%;
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+      background-image: none;
+      background-color: var(--muted);
+    }
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
 }
