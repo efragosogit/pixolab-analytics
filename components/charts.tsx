@@ -228,7 +228,17 @@ export function RankedBars({
               className="h-full rounded-md transition-all"
               style={{
                 width: `${Math.max((row.value / max) * 100, 3)}%`,
-                background: `linear-gradient(90deg, ${color}55, ${color})`,
+                // `${color}55` (hex-alpha suffix) only works when `color`
+                // is itself a hex literal — every caller here passes a
+                // `var(--chart-N)` CSS custom-property reference instead,
+                // and `var(--chart-1)55` is invalid CSS, so the browser
+                // silently drops the whole `background` declaration and
+                // the bar renders with no visible fill at all (confirmed
+                // live 2026-08-17 — every RankedBars usage in the app was
+                // affected, not just the new WhatsApp detail cards).
+                // `color-mix()` blends correctly regardless of whether
+                // `color` is a var() reference or a literal.
+                background: `linear-gradient(90deg, color-mix(in oklab, ${color} 35%, transparent), ${color})`,
               }}
             />
           </div>
