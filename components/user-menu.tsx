@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useTransition } from "react";
-import { LogOutIcon } from "lucide-react";
+import { LayoutDashboardIcon, LogOutIcon } from "lucide-react";
 import { logoutAction } from "@/app/(dashboard)/[client]/logout-action";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,11 @@ export function UserMenu({ email }: { email: string }) {
             {email}
           </DropdownMenuLabel>
         </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href="/" />}>
+          <LayoutDashboardIcon />
+          Cambiar de dashboard
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           variant="destructive"
