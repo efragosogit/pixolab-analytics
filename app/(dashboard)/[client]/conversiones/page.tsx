@@ -325,8 +325,8 @@ async function WhatsappClickDetail({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Detalle del embudo de WhatsApp
+        <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          Detalles del embudo de Whatsapp
         </h2>
         <span className="tabular text-xs text-muted-foreground">
           {detail.totalEvents.toLocaleString("es-MX")} clics en el rango
@@ -365,21 +365,6 @@ async function WhatsappClickDetail({
             nameKey="name"
             colors={["var(--chart-1)"]}
             height={180}
-          />
-        </Section>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Section title="Dispositivo">
-          <RankedBars
-            rows={detail.byDevice.map((d) => ({ label: d.label, value: d.count }))}
-            color="var(--chart-3)"
-          />
-        </Section>
-        <Section title="Canal de origen">
-          <RankedBars
-            rows={detail.byReferrerType.map((r) => ({ label: r.label, value: r.count }))}
-            color="var(--chart-4)"
           />
         </Section>
       </div>
