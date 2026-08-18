@@ -5,7 +5,10 @@ export const dynamic = "force-dynamic";
 
 export default function ForgotPasswordPage() {
   return (
-    <AuthCard title="Restablecer contraseña" description="Dashboard de Lumiservicios">
+    <AuthCard
+      title="Restablecer contraseña"
+      description="Te mandamos un enlace para elegir una nueva."
+    >
       <ForgotPasswordForm />
     </AuthCard>
   );

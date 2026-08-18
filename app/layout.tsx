@@ -16,8 +16,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lumiservicios — Dashboard",
-  description: "Custom analytics dashboard for lumiservicios.com",
+  title: "Pixolab Analytics",
+  description: "Analytics dashboards for Pixolab's clients",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -75,11 +75,11 @@ export async function sendResetEmail(to: string, resetUrl: string): Promise<void
   await getClient().emails.send({
     from: FROM!,
     to,
-    subject: "Restablece tu contraseña — Pixolab Dashboards",
+    subject: "Restablece tu contraseña — Pixolab Analytics",
     html: wrapperHtml(
-      "Pixolab Dashboards",
+      "Pixolab Analytics",
       "Restablecer contraseña",
-      "Pediste restablecer tu contraseña de Pixolab Dashboards. Este enlace expira en 1 hora. Si no fuiste tú, ignora este correo.",
+      "Pediste restablecer tu contraseña de Pixolab Analytics. Este enlace expira en 1 hora. Si no fuiste tú, ignora este correo.",
       "Restablecer contraseña",
       resetUrl,
     ),

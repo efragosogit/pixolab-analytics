@@ -1,6 +1,23 @@
 import Image from "next/image";
-import { LayoutDashboardIcon } from "lucide-react";
+import { ActivityIcon, LayoutDashboardIcon } from "lucide-react";
 import type { ReactNode } from "react";
+
+/**
+ * Small "Pixolab Analytics" lockup shown above the title on every
+ * standalone auth page — the one piece of identity that's consistent
+ * regardless of which client dashboard(s) the visitor ends up on, since
+ * (unlike `logoSrc`/`logoAlt` below) it isn't about any one client.
+ */
+function ProductMark() {
+  return (
+    <div className="mb-5 flex items-center justify-center gap-2 text-sm font-semibold tracking-tight text-foreground/70">
+      <span className="flex size-5 items-center justify-center rounded-md bg-primary text-primary-foreground">
+        <ActivityIcon className="size-3" strokeWidth={2.5} />
+      </span>
+      Pixolab <span className="font-normal text-muted-foreground">Analytics</span>
+    </div>
+  );
+}
 
 /**
  * Shared shell for every standalone auth page (login, invite, forgot/reset
@@ -10,9 +27,10 @@ import type { ReactNode } from "react";
  *
  * Most of these pages (login, forgot/reset password) are global — no
  * client context yet, since the same login serves every client dashboard
- * — so the mark defaults to a generic icon, not any one client's favicon.
- * `/invite/[token]` is the one page that already knows which client the
- * invite is for and passes its real favicon/name via `logoSrc`/`logoAlt`.
+ * — so the mark below the `ProductMark` defaults to a generic icon, not
+ * any one client's favicon. `/invite/[token]` is the one page that
+ * already knows which client the invite is for and passes its real
+ * favicon/name via `logoSrc`/`logoAlt`.
  */
 export function AuthCard({
   title,
@@ -29,7 +47,8 @@ export function AuthCard({
 }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <ProductMark />
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <span className="flex size-10 items-center justify-center overflow-hidden rounded-lg bg-primary/15 ring-1 ring-primary/20">
             {logoSrc ? (

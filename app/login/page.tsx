@@ -10,7 +10,7 @@ export default async function LoginPage() {
   if (user) redirect("/");
 
   return (
-    <AuthCard title="Iniciar sesión" description="Dashboard de Lumiservicios">
+    <AuthCard title="Bienvenido de vuelta" description="Inicia sesión para ver tus dashboards.">
       <LoginForm />
     </AuthCard>
   );

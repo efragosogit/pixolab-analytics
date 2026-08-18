@@ -512,7 +512,64 @@ need to change, and delete that page's generator functions from
     `middleware.ts` → `proxy.ts` (Next 16.3 flags the old convention as
     deprecated but still fully supports it — cosmetic, not urgent).
 
+## Done since the redesign, continued (2026-08-18)
+
+- **App-wide rename to "Pixolab Analytics"** — the product identity shown
+  on every page that isn't scoped to one specific client (root
+  `<title>`/metadata in `app/layout.tsx`, the login/forgot-password
+  `AuthCard` copy, the reset-password email's subject/branding in
+  `lib/auth/email.ts`, the post-login picker's header). Previous copy
+  ("Lumiservicios — Dashboard", "Pixolab Dashboards") was left over from
+  the single-tenant era and the pre-rename Railway project name — neither
+  was ever the intended product name for this multi-tenant app.
+  `components/auth-card.tsx` grew a small `ProductMark` (icon + "Pixolab
+  Analytics" wordmark) shown above the page-specific title on every
+  standalone auth page, so that identity is now consistent across
+  login/invite/forgot/reset — previously only the per-client favicon
+  showed, with no product-level branding at all. `lib/db.ts`'s and
+  `lib/leads-db.ts`'s doc-comment mentions of "Pixolab Dashboards" were
+  **not** touched — those name the actual Railway project, a real
+  external identifier, not app-facing copy.
+- **The post-login picker (`app/(dashboard)/page.tsx`) now always shows**,
+  even with exactly one accessible client — previously it silently
+  redirected straight to that one dashboard, skipping the picker
+  entirely, which was the overwhelmingly common case (every non-staff
+  user has exactly one). Changed on explicit request: every login should
+  land on "which dashboard(s) am I in" first, not skip it implicitly.
+  Picker cards got a redesign pass (favicon + name + domain subtitle,
+  hover lift) — kept the entrance animation dead simple
+  (`animate-in fade-in slide-in-from-bottom-*` only, no explicit
+  `opacity-0` base + `fill-mode-forwards` + per-item stagger) after that
+  combination shipped invisible cards in a real browser check — the DOM
+  had the right content (confirmed via `get_page_text`) but every card
+  sat at `opacity-0` with nothing overriding it, so the "which utility
+  wins" cascade with `tw-animate-css` isn't safe to assume; the simpler
+  pattern used elsewhere in this file (`AuthCard`) was verified working
+  and is what both now share.
+- **NUMA Ingeniería added as a second `clients` row** (slug `numa`,
+  `favicon_path`/`allowed_origin` still `NULL`) — see "Not yet done" above
+  for what's still missing before its dashboard pages show real data.
+  Picking it from the login picker and visiting any of its pages already
+  works end-to-end *as a graceful degradation*: `getClientConfig` throws
+  a clear "Missing CLIENT_NUMA_OPENPANEL_CLIENT_ID..." error, and every
+  page's existing try/catch renders that as a normal `ErrorCard` — no
+  crash, confirmed live.
+
 ## Not yet done
+- **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
+  2026-08-18 but has no real credentials yet** — no `CLIENT_NUMA_*` env
+  vars exist, so every page for it renders `getClientConfig`'s clear
+  "Missing CLIENT_NUMA_OPENPANEL_CLIENT_ID..." `ErrorCard` instead of
+  crashing (confirmed live). It already shows up correctly in the login
+  picker (favicon-less, falls back to the "N" letter avatar) and in the
+  Topbar once you're on `/numa/*`. To make it real: same setup as
+  Lumiservicios — an OpenPanel "Read" client for NUMA's existing OpenPanel
+  project (see `pixolab-openpanel/CLAUDE.md`, NUMA is already tracked
+  there), a GSC service-account grant on NUMA's property if SEO should
+  work, and a Google Ads customer ID if Ads should work. `favicon_path`
+  and `allowed_origin` are also still NULL on its `clients` row — fill
+  those in once there's a real favicon asset and a leads-ingest domain to
+  allow.
 - **Leads/Conversiones page's true 3rd funnel step** (actual closed sale)
   doesn't exist anywhere yet. WhatsApp clicks are a dead end for this — no
   way to trace a click to a sale. Form submissions *are* traceable in
