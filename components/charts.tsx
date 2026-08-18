@@ -205,10 +205,19 @@ export function RankedBars({
   rows,
   format: fmt = "number",
   color = "var(--chart-1)",
+  onRowClick,
 }: {
   rows: { label: string; value: number }[];
   format?: ValueFormat;
   color?: string;
+  /**
+   * Optional — when given, every row becomes a clickable button that
+   * calls this with the row's `label` (e.g. to open a detail modal keyed
+   * by that label). Rows stay plain, non-interactive divs when omitted,
+   * so this is opt-in per usage, not a behavior change for the many
+   * other RankedBars call sites (top states, devices, referrers, …).
+   */
+  onRowClick?: (label: string) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -219,7 +228,23 @@ export function RankedBars({
   return (
     <div className="flex flex-col gap-2.5">
       {rows.map((row) => (
-        <div key={row.label} className="flex items-center gap-3">
+        <div
+          key={row.label}
+          role={onRowClick ? "button" : undefined}
+          tabIndex={onRowClick ? 0 : undefined}
+          onClick={onRowClick ? () => onRowClick(row.label) : undefined}
+          onKeyDown={
+            onRowClick
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onRowClick(row.label);
+                  }
+                }
+              : undefined
+          }
+          className={`flex w-full items-center gap-3 ${onRowClick ? "cursor-pointer rounded-md transition-colors hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : ""}`}
+        >
           <div className="w-32 shrink-0 truncate text-xs text-foreground/70" title={row.label}>
             {row.label}
           </div>

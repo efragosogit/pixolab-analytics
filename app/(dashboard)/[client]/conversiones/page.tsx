@@ -15,6 +15,7 @@ import { resolveRange, type ResolvedRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { JourneyIndicator, type JourneyStage } from "@/components/journey-indicator";
 import { CategoryBars, RankedBars, StackedBars } from "@/components/charts";
+import { ClickablePageBars } from "@/components/clickable-page-bars";
 
 export const dynamic = "force-dynamic";
 
@@ -301,9 +302,19 @@ async function WhatsappClickDetail({
   range: ResolvedRange;
 }) {
   let detail: Awaited<ReturnType<typeof getEventDetail>> | null = null;
+  let pages: Awaited<ReturnType<typeof getPagePerformance>>["pages"] = [];
   let error: string | null = null;
   try {
-    detail = await getEventDetail(config.openpanel, range, "whatsapp_click");
+    // High limit — lookup pool for the page-detail modal on "Páginas que
+    // más generan clics" below, not something displayed directly here.
+    // See ClickablePageBars' doc comment for why this needs its own
+    // fetch rather than reusing the click-count rows.
+    const [detailResult, pagePerformanceResult] = await Promise.all([
+      getEventDetail(config.openpanel, range, "whatsapp_click"),
+      getPagePerformance(config.openpanel, range, 200),
+    ]);
+    detail = detailResult;
+    pages = pagePerformanceResult.pages;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -335,7 +346,10 @@ async function WhatsappClickDetail({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="Páginas que más generan clics (top 10)">
-          <RankedBars rows={detail.topPaths.map((p) => ({ label: p.label, value: p.count }))} />
+          <ClickablePageBars
+            rows={detail.topPaths.map((p) => ({ label: p.label, value: p.count }))}
+            pages={pages}
+          />
         </Section>
         <Section title="Estados con más clics (top 10)">
           <RankedBars

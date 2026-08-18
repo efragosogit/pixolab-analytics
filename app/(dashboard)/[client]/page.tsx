@@ -3,6 +3,7 @@ import { es } from "date-fns/locale";
 import { MonitorSmartphoneIcon, EyeIcon, PercentIcon, TimerIcon, UsersIcon } from "lucide-react";
 import {
   getOverview,
+  getPagePerformance,
   getTopPages,
   getTrafficDevices,
   getTrafficReferrers,
@@ -11,6 +12,7 @@ import { getClientConfig } from "@/lib/client-config";
 import { percentDelta, previousRange, resolveRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { RankedBars, TrendArea } from "@/components/charts";
+import { ClickablePageBars } from "@/components/clickable-page-bars";
 
 export const dynamic = "force-dynamic";
 
@@ -43,16 +45,28 @@ export default async function TrafficPage({
   let topPages: Awaited<ReturnType<typeof getTopPages>> = [];
   let referrers: Awaited<ReturnType<typeof getTrafficReferrers>> = [];
   let devices: Awaited<ReturnType<typeof getTrafficDevices>> = [];
+  let pagePerformance: Awaited<ReturnType<typeof getPagePerformance>>["pages"] = [];
 
   try {
     const config = await getClientConfig(client);
-    [overview, prevOverview, topPages, referrers, devices] = await Promise.all([
-      getOverview(config.openpanel, range),
-      getOverview(config.openpanel, prev),
-      getTopPages(config.openpanel, range),
-      getTrafficReferrers(config.openpanel, range),
-      getTrafficDevices(config.openpanel, range),
-    ]);
+    let pagePerformanceResult: Awaited<ReturnType<typeof getPagePerformance>>;
+    [overview, prevOverview, topPages, referrers, devices, pagePerformanceResult] =
+      await Promise.all([
+        getOverview(config.openpanel, range),
+        getOverview(config.openpanel, prev),
+        getTopPages(config.openpanel, range),
+        getTrafficReferrers(config.openpanel, range),
+        getTrafficDevices(config.openpanel, range),
+        // High limit, not the 8 actually displayed below — this is also
+        // the lookup pool for ClickablePageBars' detail modal, and
+        // "Páginas más visitadas" ranks by pageviews while this endpoint
+        // ranks its own top-N by sessions, so the two lists don't line up
+        // 1:1; a generous limit maximizes the chance a clicked page is
+        // found (confirmed live: this endpoint has no ~100-row cap like
+        // /events does, 230/230 pages came back for a real 30-day range).
+        getPagePerformance(config.openpanel, range, 200),
+      ]);
+    pagePerformance = pagePerformanceResult.pages;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -123,9 +137,10 @@ export default async function TrafficPage({
 
           <section className="grid gap-4 lg:grid-cols-3">
             <Section title="Páginas más visitadas">
-              <RankedBars
+              <ClickablePageBars
                 format="compact"
                 rows={topPages.slice(0, 8).map((p) => ({ label: p.path, value: p.pageviews }))}
+                pages={pagePerformance}
               />
             </Section>
 
