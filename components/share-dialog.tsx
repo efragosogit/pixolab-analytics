@@ -83,9 +83,9 @@ export function ShareDialog({
     <Dialog>
       <DialogTrigger
         render={
-          <Button variant="outline" size="default">
+          <Button variant="outline" size="default" aria-label="Compartir">
             <Share2Icon />
-            Compartir
+            <span className="hidden sm:inline">Compartir</span>
           </Button>
         }
       />

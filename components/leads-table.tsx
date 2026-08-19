@@ -5,6 +5,7 @@ import { FileTextIcon, MailIcon, PhoneIcon } from "lucide-react";
 import type { LeadDisplay, QualityRating } from "@/lib/leads-types";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TableScroll } from "@/components/table-scroll";
 import { LeadDetailModal } from "@/components/lead-detail-modal";
 
 const SOURCE_COLOR: Record<LeadDisplay["source"], string> = {
@@ -64,18 +65,25 @@ export function LeadsTable({ client, leads }: { client: string; leads: LeadDispl
   return (
     <div className="flex flex-col gap-4">
       <Tabs value={filter} onValueChange={(v) => setFilter(v as SourceFilter)}>
-        <TabsList>
-          <TabsTrigger value="all">Todas las fuentes</TabsTrigger>
-          <TabsTrigger value="Formulario de contacto">Formulario de contacto</TabsTrigger>
-          <TabsTrigger value="Descarga de catálogo">Descarga de catálogo</TabsTrigger>
-        </TabsList>
+        {/* TabsList is `w-fit` (shadcn default) — these three Spanish
+            labels together don't fit a phone width, and with nothing to
+            scroll them it just silently clipped past the card edge with
+            no way to reach "Descarga de catálogo" at all. Own scroll
+            container, same fix as Topbar's action row. */}
+        <div className="scrollbar-none -mx-1 overflow-x-auto px-1">
+          <TabsList className="w-max">
+            <TabsTrigger value="all">Todas las fuentes</TabsTrigger>
+            <TabsTrigger value="Formulario de contacto">Formulario de contacto</TabsTrigger>
+            <TabsTrigger value="Descarga de catálogo">Descarga de catálogo</TabsTrigger>
+          </TabsList>
+        </div>
       </Tabs>
 
-      <div className="overflow-x-auto">
+      <TableScroll>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="py-3 pl-1 font-medium">Prospecto</th>
+              <th className="sticky left-0 z-10 bg-card py-3 pl-1 font-medium">Prospecto</th>
               <th className="py-3 font-medium">Fuente</th>
               <th className="py-3 font-medium">Detalle</th>
               <th className="py-3 font-medium">Calificación</th>
@@ -94,10 +102,10 @@ export function LeadsTable({ client, leads }: { client: string; leads: LeadDispl
                 <tr
                   key={lead.id}
                   onClick={() => openLead(lead)}
-                  className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/40"
+                  className="group cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/40"
                 >
-                  <td className="max-w-64 py-3 pl-1">
-                    <div className="font-medium text-foreground">{lead.name}</div>
+                  <td className="sticky left-0 z-10 max-w-40 bg-card py-3 pl-1 group-hover:bg-accent/40 sm:max-w-64">
+                    <div className="truncate font-medium text-foreground">{lead.name}</div>
                     <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
                       <span className="flex items-center gap-1.5">
                         <MailIcon className="size-3 shrink-0" />
@@ -145,7 +153,7 @@ export function LeadsTable({ client, leads }: { client: string; leads: LeadDispl
             )}
           </tbody>
         </table>
-      </div>
+      </TableScroll>
 
       <LeadDetailModal client={client} lead={selected} open={modalOpen} onOpenChange={setModalOpen} />
     </div>

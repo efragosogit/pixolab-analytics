@@ -555,6 +555,78 @@ need to change, and delete that page's generator functions from
   page's existing try/catch renders that as a normal `ErrorCard` — no
   crash, confirmed live.
 
+## Done since the redesign, continued (2026-08-19)
+
+- **Fixed: the whole app was silently broken on real mobile viewports —
+  not a per-component styling issue, one root overflow was forcing every
+  page's *entire layout viewport* wider than the screen.** Reported as
+  "the modal overflows on mobile" and "the topbar with Compartir doesn't
+  fit," but those were symptoms, not separate bugs. Root-caused live at a
+  375px viewport: `Topbar`'s top-row action group (date range + Compartir
+  + Exportar PDF + theme + account, all in one non-wrapping flex row with
+  no shrink/scroll) needed 584px against ~327px available — confirmed via
+  `element.scrollWidth` vs `clientWidth` on every element on the page,
+  not by eyeballing a screenshot (screenshots of this bug were
+  misleading: `window.innerWidth` itself reported 608, not 375, because
+  the overflow forced the browser to widen its whole layout viewport to
+  fit the unwrapped row — every fixed-position element on the page,
+  including dialogs, was then computing `100%` against that wrong 608px
+  width, which is why the page-detail-modal's text also appeared to
+  overflow even though the modal component itself had no bug). Fixed at
+  the source in `components/topbar.tsx`: action buttons compress on
+  mobile (`ShareDialog`'s "Compartir" label and the brand's client-name
+  text hidden below `sm:`, matching the existing pattern already used for
+  `ExportPdfButton` and the "Dashboard" badge; `DateRangePicker`'s label
+  capped to `max-w-[92px]` with `truncate` below `sm:`), plus the action
+  row and `SectionNav` both got `overflow-x-auto` as a safety net so a
+  future long client name or extra button degrades to "swipe to see the
+  rest" instead of breaking the page-wide viewport again. Verified fixed
+  by the same `scrollWidth`/`clientWidth` sweep returning zero overflowing
+  elements on all 7 routes, and `window.innerWidth` correctly reporting
+  375 again.
+- **`components/ui/dialog.tsx` hardened against the actual modal-text-
+  overflow class of bug**, independent of the Topbar fix above (both were
+  real, just compounding): `DialogPrimitive.Popup` is a CSS grid, and
+  grid items default to `min-width: auto` (their content's min-content
+  size) unless overridden — a long unbroken sentence (a recommendation in
+  `PageDetailModal`, a permalink) was sizing its grid item wider than the
+  dialog's own `max-width`, spilling text past the rounded card edge
+  instead of wrapping/truncating. Fixed once, for every dialog in the
+  app, with `[&>*]:min-w-0` on `DialogContent` plus `overflow-hidden` as
+  a second guard. Confirmed inner Base UI popups (Select, etc.) are
+  unaffected — they render via `Portal`, outside `DialogContent`'s DOM
+  subtree, so clipping it doesn't touch them.
+- **Tables get a shared `components/table-scroll.tsx` (`TableScroll`)**
+  instead of a bare `overflow-x-auto` div — same functional scroll as
+  before (confirmed these were never literally broken, just undiscoverable:
+  columns past the fold were silently unreachable-*feeling* with zero
+  visual hint that swiping revealed more), now with a right-edge fade so
+  it reads as "swipe for more," not "the rest of the data is missing."
+  Applied to all 5 tables in the app (`/performance`, `/leads`, `/seo`,
+  `/ads`, `/social`). `/performance` and `/leads` additionally got a
+  **sticky first column** (`sticky left-0 bg-card`, solid background
+  since scrolled content passes underneath it) — those two are the
+  tables someone most needs to keep the row's identity ("which page,"
+  "which prospect") on screen while swiping through the metrics.
+  `/leads`' source-filter `TabsList` (`w-fit` by default, three Spanish
+  labels together don't fit a phone width) got the same
+  `overflow-x-auto` treatment — previously just silently clipped past the
+  card edge with no way to reach "Descarga de catálogo" at all, not
+  merely undiscoverable like the tables.
+- **Diagnostic technique worth keeping**: `resize_window` to a mobile
+  preset in this environment's browser pane does *not* reliably reflect
+  in `window.innerWidth`/`getBoundingClientRect()` when the page has a
+  genuine horizontal-overflow bug (the reported "375" is the visual
+  viewport; the layout viewport widens to fit overflowing content, and
+  `innerWidth` tracks the latter) — screenshots alone were actively
+  misleading here. The reliable check is a live sweep:
+  `document.querySelectorAll('body *')` diffing each element's
+  `scrollWidth` vs `clientWidth` where `overflowX === 'visible'`, plus
+  comparing `document.documentElement.clientWidth` (the true visual
+  viewport) against `scrollWidth` (what content actually needs). Zero
+  results on that sweep is the real "no mobile overflow" signal, not a
+  screenshot looking okay at a glance.
+
 ## Not yet done
 - **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
   2026-08-18 but has no real credentials yet** — no `CLIENT_NUMA_*` env

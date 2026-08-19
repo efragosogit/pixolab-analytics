@@ -53,7 +53,17 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // `[&>*]:min-w-0` on the direct children matters more than it
+          // looks: this is a CSS grid, and grid items default to
+          // `min-width: auto` (their content's min-content size) unless
+          // overridden — a long unbroken sentence (a recommendation, a
+          // permalink) was pushing its grid item wider than the dialog's
+          // own max-width, spilling text past the rounded card edge on
+          // mobile instead of wrapping/truncating (confirmed live on a
+          // 375px viewport). `overflow-hidden` is a second guard so
+          // nothing can visually escape the card even if some future
+          // child still doesn't wrap correctly.
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-hidden rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm [&>*]:min-w-0 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

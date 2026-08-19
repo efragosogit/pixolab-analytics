@@ -11,6 +11,7 @@ import { getSocialOverview, getSocialPlatforms, getSocialPosts } from "@/lib/moc
 import { resolveRange } from "@/lib/date-range";
 import { ComingSoon, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { TrendArea } from "@/components/charts";
+import { TableScroll } from "@/components/table-scroll";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -133,7 +134,7 @@ export default async function SocialPage({
         </section>
 
         <Section title="Publicaciones con mejor alcance">
-          <div className="overflow-x-auto">
+          <TableScroll>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -187,7 +188,7 @@ export default async function SocialPage({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         </Section>
       </div>
     </div>

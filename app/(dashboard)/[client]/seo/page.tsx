@@ -6,6 +6,7 @@ import { getClientConfig } from "@/lib/client-config";
 import { percentDelta, previousRange, resolveRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { TrendArea } from "@/components/charts";
+import { TableScroll } from "@/components/table-scroll";
 
 export const dynamic = "force-dynamic";
 
@@ -107,7 +108,7 @@ export default async function SeoPage({
           </section>
 
           <Section title="Búsquedas principales">
-            <div className="overflow-x-auto">
+            <TableScroll>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -159,7 +160,7 @@ export default async function SeoPage({
                   )}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           </Section>
         </>
       )}

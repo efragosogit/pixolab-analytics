@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PagePerformance } from "@/lib/openpanel";
 import { PageDetailModal } from "@/components/page-detail-modal";
+import { TableScroll } from "@/components/table-scroll";
 import { Badge } from "@/components/ui/badge";
 
 /**
@@ -18,11 +19,17 @@ export function PerformanceTable({ pages }: { pages: PagePerformance[] }) {
   const selectedPage = pages.find((p) => p.path === selectedPath) ?? null;
 
   return (
-    <div className="overflow-x-auto">
+    <>
+      <TableScroll>
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
-            <th className="py-3 pl-1 font-medium">Página</th>
+            {/* Sticky first column — "Página" is the one thing you need
+                on screen the whole time you're scrolling right through
+                the metrics on a narrow phone; solid bg (not the
+                card's usual /70) so scrolled content doesn't show
+                through underneath it. */}
+            <th className="sticky left-0 z-10 bg-card py-3 pl-1 font-medium">Página</th>
             <th className="py-3 text-right font-medium">Sesiones</th>
             <th className="py-3 text-right font-medium">Bounce</th>
             <th className="py-3 text-right font-medium">Duración</th>
@@ -34,9 +41,9 @@ export function PerformanceTable({ pages }: { pages: PagePerformance[] }) {
             <tr
               key={p.path}
               onClick={() => setSelectedPath(p.path)}
-              className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/40"
+              className="group cursor-pointer border-b border-border/40 last:border-0 hover:bg-accent/40"
             >
-              <td className="max-w-72 py-3 pl-1">
+              <td className="sticky left-0 z-10 max-w-48 bg-card py-3 pl-1 group-hover:bg-accent/40 sm:max-w-72">
                 <div className="truncate font-medium text-foreground">{p.title || p.path}</div>
                 <div className="truncate text-xs text-muted-foreground">{p.path}</div>
               </td>
@@ -91,6 +98,7 @@ export function PerformanceTable({ pages }: { pages: PagePerformance[] }) {
           ))}
         </tbody>
       </table>
+      </TableScroll>
 
       <PageDetailModal
         page={selectedPage}
@@ -100,6 +108,6 @@ export function PerformanceTable({ pages }: { pages: PagePerformance[] }) {
           if (!open) setSelectedPath(null);
         }}
       />
-    </div>
+    </>
   );
 }

@@ -53,12 +53,17 @@ export function DateRangePicker() {
       <PopoverTrigger
         className={cn(
           buttonVariants({ variant: "outline", size: "lg" }),
-          "gap-2 border-border/70 bg-card/60 pl-3 pr-2.5 font-normal text-foreground/90 hover:bg-accent hover:text-foreground",
+          "gap-1.5 border-border/70 bg-card/60 pl-2.5 pr-2 font-normal text-foreground/90 hover:bg-accent hover:text-foreground sm:gap-2 sm:pl-3 sm:pr-2.5",
         )}
       >
-        <CalendarIcon className="size-3.5 text-muted-foreground" />
-        <span className="tabular text-sm">{formatRangeLabel(current)}</span>
-        <ChevronDownIcon className="size-3.5 text-muted-foreground" />
+        <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        {/* Full label at sm+; capped/truncated on mobile so this one
+            button can't reopen the topbar-overflow bug on a long custom
+            range label — see Topbar's own comment for what that broke. */}
+        <span className="tabular max-w-[92px] truncate text-sm sm:max-w-none">
+          {formatRangeLabel(current)}
+        </span>
+        <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
         align="end"
