@@ -627,6 +627,23 @@ need to change, and delete that page's generator functions from
   results on that sweep is the real "no mobile overflow" signal, not a
   screenshot looking okay at a glance.
 
+## Done since the redesign, continued (2026-08-21)
+
+- **Fixed: SEO clicks/impressions undercounted vs. Search Console's own
+  UI, for any range ending "today" (every preset here does).** Root
+  cause: the Search Console API defaults to `dataState: "final"` when not
+  specified, and Search Console typically takes ~2 days to finalize a
+  day's data — confirmed live 2026-08-21: a 7-day query (Aug 15–21)
+  returned exactly 0 clicks for Aug 20 and 21 with the default query, but
+  24 and 1 real clicks respectively with `dataState: "all"` (95 → 120
+  total for the same 7-day window). Search Console's own UI shows this
+  same preliminary/"fresh" data by default (marked there as such), so the
+  dashboard was silently lagging real numbers by up to 2 days on every
+  range. Fixed in `lib/gsc.ts`'s `searchAnalyticsQuery` by always passing
+  `dataState: "all"` — matches what Search Console's own UI shows,
+  accepting the same trade-off it does (the most recent 1-2 days can
+  shift slightly as Google finishes processing them).
+
 ## Not yet done
 - **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
   2026-08-18 but has no real credentials yet** — no `CLIENT_NUMA_*` env

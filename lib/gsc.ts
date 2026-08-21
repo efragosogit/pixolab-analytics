@@ -78,6 +78,23 @@ async function searchAnalyticsQuery(
       endDate: params.endDate,
       dimensions: params.dimensions,
       rowLimit: params.rowLimit ?? 25,
+      // Without this, the API defaults to dataState "final" — Search
+      // Console typically takes ~2 days to finalize a day's data, so any
+      // range ending "today" (every preset here does) silently comes
+      // back with zero rows for the last 1-2 days instead of an error,
+      // undercounting clicks/impressions with no visible sign why.
+      // Confirmed live 2026-08-21: the default query returned 0 clicks
+      // for the two most recent days of a 7-day range (95 total) while
+      // the *same* range with "all" showed 24 and 1 real clicks on those
+      // two days (120 total) — a real ~25-click undercount, not a
+      // rounding difference. "all" includes this preliminary data (which
+      // can shift slightly as Google finishes processing it over the
+      // next day or two) — the same data Search Console's own UI shows
+      // by default, marked there as "fresh"/preliminary. Matching that
+      // default is what actually fixes the dashboard-vs-GSC mismatch;
+      // leaving this on "final" would keep silently lagging real numbers
+      // by up to 2 days on every range that includes recent days.
+      dataState: "all",
     },
   });
   return (res.data.rows ?? []).map((r) => ({
