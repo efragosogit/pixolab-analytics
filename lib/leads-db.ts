@@ -17,11 +17,11 @@ import type { DateRange } from "./openpanel";
 export type QualityRating = 1 | 2 | 3 | 4 | 5;
 
 export const QUALITY_RATING_LABELS: Record<QualityRating, string> = {
-  1: "Descartado",
-  2: "Frío",
+  1: "No apto",
+  2: "Dudoso",
   3: "Tibio",
-  4: "Caliente",
-  5: "Muy caliente",
+  4: "Calificado",
+  5: "Excelente",
 };
 
 export interface LeadRecord {

@@ -129,6 +129,32 @@ export async function listCollaborators(client: string): Promise<Collaborator[]>
   }));
 }
 
+/**
+ * Everyone who can actually log in and see this client's dashboard —
+ * used to populate the "Calificado por" select on a lead (see
+ * `components/lead-detail-modal.tsx`), not just who's in the Compartir
+ * list. Unlike `listCollaborators`, this includes @pixolab.com.mx staff
+ * even though their access is never a `client_memberships` row (computed
+ * live — see `canManageAccess`/`hasClientAccess`'s doc comments) — staff
+ * are very often the ones actually doing the qualifying, so leaving them
+ * out would make the most common case (efragoso or another staff member
+ * qualifying a lead) impossible to pick from the list.
+ */
+export async function getQualifierOptions(client: string): Promise<string[]> {
+  const result = await getPool().query<{ email: string }>(
+    `SELECT DISTINCT u.email
+     FROM users u
+     WHERE u.email ILIKE '%@pixolab.com.mx'
+        OR u.id IN (
+          SELECT cm.user_id FROM client_memberships cm
+          WHERE cm.client = $1 AND cm.accepted_at IS NOT NULL
+        )
+     ORDER BY u.email ASC`,
+    [client],
+  );
+  return result.rows.map((r) => r.email);
+}
+
 export interface ActionResult {
   ok: boolean;
   error?: string;

@@ -2,6 +2,7 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { FileDownIcon, MessageSquareIcon, UsersIcon } from "lucide-react";
 import { getLeadsFromDb, type LeadRecord } from "@/lib/leads-db";
+import { getQualifierOptions } from "@/lib/auth/users";
 import { resolveRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { LeadsTable } from "@/components/leads-table";
@@ -47,9 +48,13 @@ export default async function LeadsPage({
 
   let error: string | null = null;
   let leads: LeadDisplay[] = [];
+  let qualifierOptions: string[] = [];
 
   try {
-    leads = (await getLeadsFromDb(client, range)).map(toLead);
+    [leads, qualifierOptions] = await Promise.all([
+      getLeadsFromDb(client, range).then((rows) => rows.map(toLead)),
+      getQualifierOptions(client),
+    ]);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -90,7 +95,7 @@ export default async function LeadsPage({
           </section>
 
           <Section title="Prospectos">
-            <LeadsTable client={client} leads={leads} />
+            <LeadsTable client={client} leads={leads} qualifierOptions={qualifierOptions} />
           </Section>
         </>
       )}

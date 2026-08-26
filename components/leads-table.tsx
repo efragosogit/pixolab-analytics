@@ -13,21 +13,21 @@ const SOURCE_COLOR: Record<LeadDisplay["source"], string> = {
   "Descarga de catálogo": "var(--chart-2)",
 };
 
-// 1 (descartado) is a neutral "not a real prospect" state, not literally
+// 1 (no apto) is a neutral "not a real prospect" state, not literally
 // "worse" than the others in the same sense 2-5 rank against each other —
 // styled muted/dashed rather than on the good→critical scale below.
 const RATING_STYLE: Record<QualityRating, { label: string; className: string }> = {
-  1: { label: "1 · Descartado", className: "border-border text-muted-foreground border-dashed" },
+  1: { label: "1 · No apto", className: "border-border text-muted-foreground border-dashed" },
   2: {
-    label: "2 · Frío",
+    label: "2 · Dudoso",
     className: "border-status-critical/40 bg-status-critical/10 text-status-critical",
   },
   3: {
     label: "3 · Tibio",
     className: "border-status-warning/40 bg-status-warning/10 text-status-warning",
   },
-  4: { label: "4 · Caliente", className: "border-status-good/40 bg-status-good/10 text-status-good" },
-  5: { label: "5 · Muy caliente", className: "border-status-good bg-status-good/20 text-status-good" },
+  4: { label: "4 · Calificado", className: "border-status-good/40 bg-status-good/10 text-status-good" },
+  5: { label: "5 · Excelente", className: "border-status-good bg-status-good/20 text-status-good" },
 };
 
 // `lead.date` is a full ISO timestamp (see app/leads/page.tsx's `toLead`) —
@@ -44,7 +44,15 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-MX", {
 
 type SourceFilter = "all" | LeadDisplay["source"];
 
-export function LeadsTable({ client, leads }: { client: string; leads: LeadDisplay[] }) {
+export function LeadsTable({
+  client,
+  leads,
+  qualifierOptions,
+}: {
+  client: string;
+  leads: LeadDisplay[];
+  qualifierOptions: string[];
+}) {
   const [filter, setFilter] = useState<SourceFilter>("all");
   const [selected, setSelected] = useState<LeadDisplay | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -155,7 +163,13 @@ export function LeadsTable({ client, leads }: { client: string; leads: LeadDispl
         </table>
       </TableScroll>
 
-      <LeadDetailModal client={client} lead={selected} open={modalOpen} onOpenChange={setModalOpen} />
+      <LeadDetailModal
+        client={client}
+        lead={selected}
+        qualifierOptions={qualifierOptions}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+      />
     </div>
   );
 }

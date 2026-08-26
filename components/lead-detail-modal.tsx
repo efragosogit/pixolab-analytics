@@ -20,15 +20,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 const RATING_OPTIONS: { value: QualityRating; label: string }[] = [
-  { value: 1, label: "1 — Descartado" },
-  { value: 2, label: "2 — Frío" },
+  { value: 1, label: "1 — No apto" },
+  { value: 2, label: "2 — Dudoso" },
   { value: 3, label: "3 — Tibio" },
-  { value: 4, label: "4 — Caliente" },
-  { value: 5, label: "5 — Muy caliente" },
+  { value: 4, label: "4 — Calificado" },
+  { value: 5, label: "5 — Excelente" },
 ];
 
 const dateTimeFormatter = new Intl.DateTimeFormat("es-MX", {
@@ -49,11 +48,13 @@ const FieldLabel = ({ children }: { children: React.ReactNode }) => (
 export function LeadDetailModal({
   client,
   lead,
+  qualifierOptions,
   open,
   onOpenChange,
 }: {
   client: string;
   lead: LeadDisplay | null;
+  qualifierOptions: string[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -76,6 +77,15 @@ export function LeadDetailModal({
   }
 
   if (!lead) return null;
+
+  // The lead's previously-saved value can be a name that no longer has
+  // access (revoked) or, for leads qualified before this was a select, a
+  // free-text name never tied to an account at all — keep it selectable
+  // instead of silently dropping it from view.
+  const qualifierChoices =
+    lead.qualifiedBy && !qualifierOptions.includes(lead.qualifiedBy)
+      ? [lead.qualifiedBy, ...qualifierOptions]
+      : qualifierOptions;
 
   function handleSave() {
     const ratingValue = rating ? ((Number(rating) as QualityRating) ?? null) : null;
@@ -149,11 +159,18 @@ export function LeadDetailModal({
 
           <div>
             <FieldLabel>Calificado por</FieldLabel>
-            <Input
-              value={qualifiedBy}
-              onChange={(e) => setQualifiedBy(e.target.value)}
-              placeholder="Tu nombre"
-            />
+            <Select value={qualifiedBy} onValueChange={(v) => setQualifiedBy(v ?? "")}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Sin asignar" />
+              </SelectTrigger>
+              <SelectContent>
+                {qualifierChoices.map((email) => (
+                  <SelectItem key={email} value={email}>
+                    {email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {lead.qualifiedAt && (
