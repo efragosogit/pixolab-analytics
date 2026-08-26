@@ -1,8 +1,10 @@
 import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
-import { FileDownIcon, MessageSquareIcon, UsersIcon } from "lucide-react";
+import { FileDownIcon, MessageCircleIcon, MessageSquareIcon, UsersIcon } from "lucide-react";
 import { getLeadsFromDb, type LeadRecord } from "@/lib/leads-db";
 import { getQualifierOptions } from "@/lib/auth/users";
+import { getClientConfig } from "@/lib/client-config";
+import { getUniqueLeadCount } from "@/lib/openpanel";
 import { resolveRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { LeadsTable } from "@/components/leads-table";
@@ -59,15 +61,33 @@ export default async function LeadsPage({
     error = e instanceof Error ? e.message : String(e);
   }
 
+  // WhatsApp leads live in OpenPanel (a click event), not in this page's
+  // Postgres `leads` table — there's no way to capture name/email/phone
+  // for them (see the page description below), only their volume. Kept
+  // in its own try/catch, separate from the main leads fetch above: a
+  // client with no OpenPanel credentials yet (e.g. NUMA today) should
+  // still see its real Postgres leads instead of the whole page erroring
+  // out over an unrelated source. Same "unique converting people, not
+  // raw click count" definition as Conversiones' WhatsApp funnel, for
+  // consistency across the app — see getUniqueLeadCount's doc comment.
+  let whatsappCount: number | null = null;
+  try {
+    const config = await getClientConfig(client);
+    whatsappCount = await getUniqueLeadCount(config.openpanel, range, ["whatsapp_click"]);
+  } catch {
+    whatsappCount = null;
+  }
+
   const contactCount = leads.filter((l) => l.source === "Formulario de contacto").length;
   const catalogCount = leads.filter((l) => l.source === "Descarga de catálogo").length;
+  const totalCount = contactCount + catalogCount + (whatsappCount ?? 0);
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Prospectos"
         title="Leads"
-        description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}. Base de datos de leads por fuente (Postgres, Railway) — WhatsApp no está incluido aquí (sin acceso a CRM para ver esas conversaciones); para su volumen ver Conversiones. Incluye histórico importado de CF7DB desde abril 2026; los leads nuevos empezarán a llegar automáticamente una vez que este dashboard esté desplegado y el tag de GTM se actualice para mandarlos.`}
+        description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}. Formulario de contacto y descarga de catálogo vienen de Postgres (Railway), con nombre/correo/teléfono; WhatsApp viene de OpenPanel y solo aporta volumen — sin acceso al CRM no hay forma de ver esas conversaciones ni de listarlas como prospectos individuales aquí. Incluye histórico importado de CF7DB desde abril 2026.`}
         action={<SourceStatusBadge connected={!error} />}
       />
 
@@ -75,10 +95,10 @@ export default async function LeadsPage({
         <ErrorCard message={error} />
       ) : (
         <>
-          <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard
               label="Total de leads"
-              value={leads.length.toLocaleString("es-MX")}
+              value={totalCount.toLocaleString("es-MX")}
               icon={<UsersIcon className="size-4" />}
               accent
             />
@@ -91,6 +111,11 @@ export default async function LeadsPage({
               label="Descarga de catálogo"
               value={catalogCount.toLocaleString("es-MX")}
               icon={<FileDownIcon className="size-4" />}
+            />
+            <StatCard
+              label="Leads de WhatsApp"
+              value={whatsappCount === null ? "—" : whatsappCount.toLocaleString("es-MX")}
+              icon={<MessageCircleIcon className="size-4" />}
             />
           </section>
 
