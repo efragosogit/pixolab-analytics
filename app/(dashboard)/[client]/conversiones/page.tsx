@@ -10,6 +10,7 @@ import {
   getUniqueLeadCount,
 } from "@/lib/openpanel";
 import { getAdsOverview, getSeoOverview } from "@/lib/mock-data";
+import { getLeadsFromDb } from "@/lib/leads-db";
 import { getClientConfig, type ClientConfig } from "@/lib/client-config";
 import { resolveRange, type ResolvedRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
@@ -44,15 +45,31 @@ function StageFunnel({
   title,
   stages,
   overallConversionRate,
+  leadsGenerated: leadsGeneratedOverride,
   note,
 }: {
   title: string;
   stages: FunnelStage[];
   overallConversionRate: number;
+  /**
+   * Overrides the "leads generados" headline instead of deriving it from
+   * the last stage's value. Only `WhatsappFunnel` uses this — OpenPanel's
+   * `/funnel` requires a strict per-session SEQUENCE match (screen_view
+   * immediately followed by whatsapp_click within its own funnel window),
+   * so its `completedUsers` undercounts vs. a raw unique-people count of
+   * whoever fired whatsapp_click at all (e.g. 195 vs. 202 for the same
+   * 30-day range) — the funnel's own bars/conversion-rate stay
+   * sequence-based (a real, different question: "conversion rate through
+   * this exact path"), but the headline "leads generados" number is made
+   * to match the Leads page's "Leads de WhatsApp" card, which uses the
+   * same raw/unique definition as the rest of this page's lead counting
+   * (see `LeadsJourney` and the Leads page's `totalCount`).
+   */
+  leadsGenerated?: number;
   note?: string;
 }) {
   const maxValue = stages[0]?.value ?? 1;
-  const leadsGenerated = stages[stages.length - 1]?.value ?? 0;
+  const leadsGenerated = leadsGeneratedOverride ?? stages[stages.length - 1]?.value ?? 0;
 
   return (
     <Section
@@ -125,15 +142,21 @@ function StageFunnel({
 /** Embudo 1 — real per-session OpenPanel funnel, unfiltered by path. */
 async function WhatsappFunnel({ config, range }: { config: ClientConfig; range: ResolvedRange }) {
   let result: Awaited<ReturnType<typeof getFunnel>> | null = null;
+  let uniqueLeads: number | null = null;
   let error: string | null = null;
 
   try {
-    result = await getFunnel(config.openpanel, range, ["screen_view", "whatsapp_click"]);
+    [result, uniqueLeads] = await Promise.all([
+      getFunnel(config.openpanel, range, ["screen_view", "whatsapp_click"]),
+      // Raw unique whatsapp_click count — deliberately NOT the funnel's own
+      // completedUsers, see StageFunnel's leadsGenerated doc comment.
+      getUniqueLeadCount(config.openpanel, range, ["whatsapp_click"]),
+    ]);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
 
-  if (error || !result) {
+  if (error || !result || uniqueLeads === null) {
     return <ErrorCard message={`Clic WhatsApp: ${error}`} />;
   }
 
@@ -148,6 +171,7 @@ async function WhatsappFunnel({ config, range }: { config: ClientConfig; range: 
       title="Clic WhatsApp"
       stages={stages}
       overallConversionRate={result.overallConversionRate}
+      leadsGenerated={uniqueLeads}
     />
   );
 }
@@ -163,8 +187,8 @@ async function PageFormFunnel({
   title,
   pagePath,
   pageStageLabel,
-  conversionEventName,
   conversionStageLabel,
+  conversions,
   range,
   note,
 }: {
@@ -172,8 +196,17 @@ async function PageFormFunnel({
   title: string;
   pagePath: string;
   pageStageLabel: string;
-  conversionEventName: string;
   conversionStageLabel: string;
+  /**
+   * Final-stage count, passed in already computed from Postgres by the
+   * caller (see `LeadsPage` below) instead of fetched here from OpenPanel.
+   * Both used to independently query `getUniqueLeadCount` against the
+   * OpenPanel event, which quietly disagreed by 1 with the Leads page's
+   * Postgres-row-count for the same source (13 vs. 12) — Postgres is now
+   * the single source of truth for "how many people submitted this form",
+   * matching the Leads page exactly.
+   */
+  conversions: number;
   range: ResolvedRange;
   note?: string;
 }) {
@@ -182,12 +215,9 @@ async function PageFormFunnel({
   let error: string | null = null;
 
   try {
-    const [overview, pages, conversions] = await Promise.all([
+    const [overview, pages] = await Promise.all([
       getOverview(config.openpanel, range),
       getPagePerformance(config.openpanel, range, 100),
-      // Unique converting people, not raw action count — see
-      // getUniqueLeadCount's doc comment.
-      getUniqueLeadCount(config.openpanel, range, [conversionEventName]),
     ]);
 
     const totalSessions = overview.summary.total_sessions;
@@ -217,20 +247,31 @@ async function PageFormFunnel({
   );
 }
 
-async function LeadsJourney({ config, range }: { config: ClientConfig; range: ResolvedRange }) {
+async function LeadsJourney({
+  config,
+  range,
+  postgresFormCount,
+  postgresCatalogCount,
+}: {
+  config: ClientConfig;
+  range: ResolvedRange;
+  /** From Postgres, fetched once by the caller — see `LeadsPage` below. */
+  postgresFormCount: number;
+  postgresCatalogCount: number;
+}) {
   let stages: JourneyStage[] | null = null;
   let dailyChartData: Record<string, string | number>[] = [];
   let error: string | null = null;
 
   try {
-    const [overview, daily, leads] = await Promise.all([
+    const [overview, daily, whatsappLeads] = await Promise.all([
       getOverview(config.openpanel, range),
       getDailyEventCounts(config.openpanel, range, LEAD_EVENTS),
       // Unique converting people across the whole range — deliberately
       // NOT `daily`'s per-day counts summed together, which would
       // double-count anyone who converted on more than one day. See
       // getUniqueLeadCount's doc comment.
-      getUniqueLeadCount(config.openpanel, range, LEAD_EVENTS),
+      getUniqueLeadCount(config.openpanel, range, ["whatsapp_click"]),
     ]);
     // Impresiones: no ad/GSC account connected yet, so this stage is
     // simulated — spend-derived ad impressions + SEO impressions, the same
@@ -238,6 +279,16 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
     const ads = getAdsOverview(config.slug, range);
     const seo = getSeoOverview(config.slug, range);
     const impressions = ads.impressions + seo.impressions;
+
+    // Same formula as the Leads page's "Total de leads" card: WhatsApp
+    // (unique OpenPanel event) + formulario + catálogo (Postgres rows) —
+    // previously this stage used `getUniqueLeadCount` over
+    // whatsapp_click+form_submitted together (a deduped OpenPanel-only
+    // union, excluding catalog_download entirely), which quietly disagreed
+    // with the Leads page's total (211 vs. 229 for the same 30-day range).
+    // Postgres is the source of truth for form/catalog leads app-wide (it's
+    // where the actual name/email/phone lives) — this stage now matches it.
+    const leads = whatsappLeads + postgresFormCount + postgresCatalogCount;
 
     stages = [
       {
@@ -254,7 +305,7 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
       {
         label: "Leads",
         value: leads,
-        hint: "Personas únicas: WhatsApp + formularios (OpenPanel)",
+        hint: "WhatsApp + formulario + catálogo — mismo total que la pestaña Leads",
       },
     ];
     dailyChartData = daily.map((d) => ({
@@ -277,9 +328,9 @@ async function LeadsJourney({ config, range }: { config: ClientConfig; range: Re
         <p className="-mt-1 mb-3 text-xs text-muted-foreground">
           Personas únicas por día (clic WhatsApp + formulario de contacto) — la misma
           persona convirtiendo en más de un día se cuenta en cada uno, por eso la suma
-          de las barras no coincide exactamente con el total de arriba. No incluye
-          descargas de catálogo — para tasa de conversión por visitante ver los
-          embudos abajo.
+          de las barras no coincide exactamente con el total de arriba. Tampoco incluye
+          descargas de catálogo, aunque el total de arriba sí las cuenta — esta gráfica
+          es solo para ver la tendencia diaria, no para sumar contra el indicador.
         </p>
         <StackedBars data={dailyChartData} series={LEAD_SERIES} height={220} />
       </Section>
@@ -413,6 +464,21 @@ export default async function LeadsPage({
     );
   }
 
+  // Fetched once here, at the page level, and threaded down to
+  // LeadsJourney + both PageFormFunnel calls — see those components' doc
+  // comments for why they no longer each independently ask OpenPanel for
+  // this. Left at 0 (not error-blocking) if Postgres is unreachable: the
+  // page still has real OpenPanel data to show for the WhatsApp side.
+  let postgresFormCount = 0;
+  let postgresCatalogCount = 0;
+  try {
+    const leads = await getLeadsFromDb(client, range);
+    postgresFormCount = leads.filter((l) => l.source === "form_submitted").length;
+    postgresCatalogCount = leads.filter((l) => l.source === "catalog_download").length;
+  } catch {
+    // leave at 0
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -422,7 +488,12 @@ export default async function LeadsPage({
         action={<SourceStatusBadge connected />}
       />
 
-      <LeadsJourney config={config} range={range} />
+      <LeadsJourney
+        config={config}
+        range={range}
+        postgresFormCount={postgresFormCount}
+        postgresCatalogCount={postgresCatalogCount}
+      />
 
       <section className="grid gap-6 lg:grid-cols-3">
         <WhatsappFunnel config={config} range={range} />
@@ -431,8 +502,8 @@ export default async function LeadsPage({
           title="Formulario de contacto"
           pagePath="/contactanos"
           pageStageLabel="Vista de /contactanos"
-          conversionEventName="form_submitted"
           conversionStageLabel="Formulario enviado"
+          conversions={postgresFormCount}
           range={range}
         />
         <PageFormFunnel
@@ -440,11 +511,11 @@ export default async function LeadsPage({
           title="Descarga de catálogo"
           pagePath="/catalogo-lumi"
           pageStageLabel="Vista de /catalogo-lumi"
-          conversionEventName="catalog_download"
           conversionStageLabel="Catálogo descargado"
+          conversions={postgresCatalogCount}
           range={range}
-          note="No cuenta como lead en el indicador de arriba — es interés de
-            catálogo, no intención directa de contacto."
+          note="Sí cuenta en el indicador de arriba — el total de leads incluye
+            clics de WhatsApp, formulario de contacto y descarga de catálogo."
         />
       </section>
 

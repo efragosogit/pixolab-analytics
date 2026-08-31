@@ -644,6 +644,64 @@ need to change, and delete that page's generator functions from
   accepting the same trade-off it does (the most recent 1-2 days can
   shift slightly as Google finishes processing them).
 
+## Done since the redesign, continued (2026-08-31)
+
+- **Fixed: `/conversiones` and `/leads` disagreed on "how many leads" —
+  four different, all-individually-correct counting methodologies mixed
+  across the two pages with no single canonical definition.** Reported by
+  the client as two mismatches on the same 30-day range: the "Leads"
+  journey-indicator stage on `/conversiones` showed 211 vs. `/leads`'
+  "Total de leads" showing 229; and `/conversiones`' WhatsApp funnel
+  showed 195 "leads generados" vs. `/leads`' "Leads de WhatsApp" showing
+  202. Root-caused by reconciling every number against the live API
+  directly (OpenPanel `/events`, recursively bisected past the 100-row cap
+  — see the 2026-08-17 fix above — plus a direct `psql` count) for the
+  exact same range:
+  - `/leads`' formula (already correct, unchanged): Postgres row count of
+    `form_submitted` + Postgres row count of `catalog_download` +
+    OpenPanel `getUniqueLeadCount` on `whatsapp_click` alone (raw unique
+    people who fired the event, no sequence requirement).
+  - `/conversiones`' "Leads" stage instead called `getUniqueLeadCount` on
+    `whatsapp_click` + `form_submitted` **together** as one deduped
+    OpenPanel-only union, entirely excluding `catalog_download` — a
+    different, smaller number by construction (211 vs. 229).
+  - `/conversiones`' WhatsApp funnel's "leads generados" was reading the
+    real `/funnel` endpoint's `completedUsers` (195), which requires a
+    strict per-session SEQUENCE match (`screen_view` immediately followed
+    by `whatsapp_click` inside the funnel's own window) — genuinely
+    correct for "conversion rate through this exact path", but a
+    different question from "how many people clicked WhatsApp at all"
+    (202, no sequence requirement), which is what `/leads`' card answers.
+  - The two form/catalog funnels on `/conversiones` also independently
+    queried OpenPanel's `getUniqueLeadCount` for their own "leads
+    generados" (13 for Formulario), silently disagreeing by 1 with
+    `/leads`' Postgres-row-count for the same source (12) — a smaller,
+    related inconsistency found during the same investigation.
+  - Fixed by making Postgres (via `getLeadsFromDb`) the single source of
+    truth for form/catalog counts everywhere, fetched once per page load
+    in each page's top-level component and threaded down as props —
+    `app/(dashboard)/[client]/conversiones/page.tsx`'s `LeadsJourney` now
+    takes `postgresFormCount`/`postgresCatalogCount` instead of calling
+    `getUniqueLeadCount` over both event names together, and
+    `PageFormFunnel` takes a `conversions: number` prop instead of
+    fetching it itself. `StageFunnel` gained an optional `leadsGenerated`
+    override prop (doc comment explains the funnel-sequence-vs-raw-count
+    distinction) — `WhatsappFunnel` uses it to show the raw unique
+    `whatsapp_click` count (202) as "leads generados" while leaving the
+    funnel's own bars/conversion-rate genuinely sequence-based and
+    untouched (still a real, different, useful number). Verified live
+    end-to-end after the fix, same 30-day range: `/conversiones`' "Leads"
+    stage and `/leads`' "Total de leads" both read 230 (day had advanced
+    by the time of the fix, hence 230 not 229); WhatsApp/Formulario/
+    Catálogo "leads generados" on `/conversiones` read 203/12/15,
+    exactly matching `/leads`' three source cards.
+  - "Leads por día" (the daily stacked-bar chart on `/conversiones`) was
+    deliberately left as-is — still OpenPanel-event-based
+    (whatsapp_click + form_submitted only, no catalog_download) since it
+    answers a trend question, not a total; its caption was reworded so it
+    no longer implies its own sum should match the header total, since
+    that total now includes catalog while the chart still doesn't.
+
 ## Not yet done
 - **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
   2026-08-18 but has no real credentials yet** — no `CLIENT_NUMA_*` env
