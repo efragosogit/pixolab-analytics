@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 const PAGE_TITLES: Record<string, string> = {
   "/": "Trafico-general",
   "/performance": "Performance",
-  "/leads": "Leads",
-  "/conversiones": "Conversiones",
   "/seo": "SEO",
-  "/ads": "Publicidad",
+  "/ads": "Campanas-publicitarias",
+  "/ads/funnels": "Funnels",
+  "/ads/leads": "Leads",
+  "/ads/roi": "ROI",
   "/social": "Social-media",
 };
 

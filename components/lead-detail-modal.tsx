@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { MailIcon, PhoneIcon, FileTextIcon } from "lucide-react";
-import { saveLeadQualification } from "@/app/(dashboard)/[client]/leads/actions";
+import { saveLeadQualification } from "@/app/(dashboard)/[client]/ads/leads/actions";
 import type { LeadDisplay, QualityRating } from "@/lib/leads-types";
 import {
   Dialog,

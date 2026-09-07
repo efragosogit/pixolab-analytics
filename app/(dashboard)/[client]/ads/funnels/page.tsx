@@ -437,7 +437,7 @@ async function WhatsappClickDetail({
   );
 }
 
-export default async function LeadsPage({
+export default async function FunnelsPage({
   params,
   searchParams,
 }: {
@@ -458,7 +458,7 @@ export default async function LeadsPage({
   if (!config) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader eyebrow="Analytics en vivo · OpenPanel" title="Conversiones" />
+        <PageHeader eyebrow="Analytics en vivo · OpenPanel" title="Funnels" />
         <ErrorCard message={configError ?? "Sin datos"} />
       </div>
     );
@@ -483,7 +483,7 @@ export default async function LeadsPage({
     <div className="flex flex-col gap-6">
       <PageHeader
         eyebrow="Analytics en vivo · OpenPanel"
-        title="Conversiones"
+        title="Funnels"
         description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}.`}
         action={<SourceStatusBadge connected />}
       />

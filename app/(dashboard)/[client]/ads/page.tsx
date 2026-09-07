@@ -46,8 +46,8 @@ export default async function AdsPage({
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Google Ads"
-        title="Publicidad y campañas"
+        eyebrow="Paid media · Google Ads"
+        title="Campañas publicitarias"
         description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}. Conectado directo a Google Ads (OAuth, cuenta ${customerId}) — ver lib/google-ads.ts. Meta Ads todavía no está conectado.`}
         action={<SourceStatusBadge connected={!error} />}
       />

@@ -200,22 +200,28 @@ funnels. Two other pieces of context that matter but live elsewhere:
   access to) — connecting a source straight to this dashboard, like SEO
   and Ads now do, is equally valid and sometimes simpler.
 
-## Current state (2026-08-08 — re-verify, don't trust blindly)
+## Current state (2026-09-07 — re-verify, don't trust blindly)
 
-**Nav was restructured this same day**: the old single `/leads` page (funnels +
-journey indicator) is now **`/conversiones`**. A new, separate **`/leads`**
-exists — a simulated prospects table. Don't confuse the two when reading
-old context/history — anything from before 2026-08-08 that says "the
-Leads page" almost certainly means what's now `/conversiones`.
+**Nav was restructured again 2026-09-07** — see "Done since the redesign,
+continued (2026-09-07)" below for the full rationale. The short version:
+`/conversiones` and `/leads` both moved under a new **"Paid media"**
+top-level section (was "Publicidad") as `/ads/funnels` (renamed
+"Funnels") and `/ads/leads`, alongside the pre-existing `/ads` (renamed
+"Campañas publicitarias") and a brand-new **`/ads/roi`**. Older context
+that says "the Conversiones page" or "`/conversiones`"/"`/leads`" as a
+top-level route is now stale — the *content* is unchanged, only the
+route and nav grouping moved.
 
 | Page | Route | Status |
 |---|---|---|
 | Tráfico general | `/` | **Real data.** `/overview`, `/pages/top`, `/traffic/referrers`, `/traffic/devices`. Period-over-period deltas on every stat card. |
 | Performance | `/performance` | **Real data.** `/pages/performance` — title + SEO signal badges (high bounce / low engagement / good landing page) |
-| Leads | `/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB 2026-08-11, a further gap (2026-08-06 → 2026-08-17, caused by the GTM tag update having been pending, see "Fixed 2026-08-13: this app's own `/api/*` routes are unreachable" above) backfilled 2026-08-17 the same way; Lumiservicios' live GTM container now actually calls `/ingest/leads/lumiservicios` and new leads arrive automatically — verified live with two real submissions the same day. `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. |
-| Conversiones | `/conversiones` | **Real data**, 3 embudos: `screen_view → whatsapp_click` (real OpenPanel `/funnel`); `Formulario de contacto` and `Descarga de catálogo` (3-stage, hand-assembled from `/overview` + `/pages/performance` + `/events` — `/funnel` can't filter a step by path, see `StageFunnel`'s doc comment in `app/(dashboard)/conversiones/page.tsx`). Plus a top journey indicator (Impresiones → Tráfico → Leads, Impresiones still simulated) and a daily leads chart. |
 | SEO | `/seo` | **Real data.** Connected directly to Google Search Console via a service account (`lib/gsc.ts`) — deliberately *not* through OpenPanel's GSC integration, see "Bigger plan" above. |
-| Publicidad | `/ads` | **Real data.** Connected directly to Google Ads via OAuth (`lib/google-ads.ts`) — Google Ads has no service-account option, unlike GSC. Only Google Ads; Meta Ads still not connected. |
+| **Paid media** (parent, submenu) | `/ads/*` | Groups the four rows below under one top-level nav tab with a second row of sub-tabs — see the 2026-09-07 entry below. |
+| — Campañas publicitarias | `/ads` | **Real data.** Connected directly to Google Ads via OAuth (`lib/google-ads.ts`) — Google Ads has no service-account option, unlike GSC. Only Google Ads; Meta Ads still not connected. (Was the flat "Publicidad" page/nav item before 2026-09-07.) |
+| — Funnels | `/ads/funnels` | **Real data**, 3 embudos: `screen_view → whatsapp_click` (real OpenPanel `/funnel`); `Formulario de contacto` and `Descarga de catálogo` (3-stage, hand-assembled from `/overview` + `/pages/performance` + `/events` — `/funnel` can't filter a step by path, see `StageFunnel`'s doc comment in `app/(dashboard)/[client]/ads/funnels/page.tsx`). Plus a top journey indicator (Impresiones → Tráfico → Leads, Impresiones still simulated) and a daily leads chart. (Was "Conversiones" at `/conversiones` before 2026-09-07.) |
+| — Leads | `/ads/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB 2026-08-11, a further gap (2026-08-06 → 2026-08-17, caused by the GTM tag update having been pending, see "Fixed 2026-08-13: this app's own `/api/*` routes are unreachable" above) backfilled 2026-08-17 the same way; Lumiservicios' live GTM container now actually calls `/ingest/leads/lumiservicios` and new leads arrive automatically — verified live with two real submissions the same day. `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. (Was a flat top-level `/leads` before 2026-09-07.) |
+| — ROI | `/ads/roi` | **Simulated**, new 2026-09-07. Monthly historial (inversión/clics/leads/conversiones/ventas totales, "Ver detalles" per-campaign breakdown) — see the 2026-09-07 entry below for why and how. |
 | Social media | `/social` | **Simulated**, no real source planned yet (needs Meta Graph API + TikTok for Business) |
 
 Every page respects the global date-range picker (top bar) and is
@@ -315,9 +321,9 @@ numbers come from `lib/mock-data.ts` — **seeded**, not `Math.random()`
 every render (a `mulberry32` PRNG keyed off the selected date range), so
 the same period always shows the same numbers in a session instead of
 jittering on every navigation. Every page rendering mock data carries a
-visible `<SimulatedBadge />` (dashed border, "Datos simulados" label) next
-to its title — **never remove that badge without actually connecting a
-real source**, it's the whole point of the pattern. When a real source
+visible `<SourceStatusBadge connected={false} />` (dashed border, "Datos
+simulados" label) next to its title — **never remove that badge without
+actually connecting a real source**, it's the whole point of the pattern. When a real source
 lands (GSC connected, ads API wired up, etc.), replace the mock-data call
 with a real fetch using the exact same page-level shape so the UI doesn't
 need to change, and delete that page's generator functions from
@@ -702,6 +708,89 @@ need to change, and delete that page's generator functions from
     no longer implies its own sum should match the header total, since
     that total now includes catalog while the chart still doesn't.
 
+## Done since the redesign, continued (2026-09-07)
+
+- **Nav restructured around a new "Paid media" section with a submenu.**
+  Client request: rename "Conversiones" → "Funnels" and "Publicidad" →
+  "Paid media", reorder the top nav to Tráfico / Performance / SEO / Paid
+  media / Social, and group Paid media's four pages (Campañas
+  publicitarias, Funnels, Leads, ROI) under one top-level tab instead of
+  three-plus flat ones. Confirmed with the client mid-task what happens to
+  the pre-existing real Google Ads page (`/ads`) — it wasn't in their
+  3-item submenu list — and they asked for it added as a 4th item,
+  "Campañas publicitarias", ahead of Funnels.
+  - **Routes physically moved**, not just relabeled in the nav:
+    `app/(dashboard)/[client]/conversiones` → `app/(dashboard)/[client]/ads/funnels`,
+    `app/(dashboard)/[client]/leads` → `app/(dashboard)/[client]/ads/leads`
+    (via `git mv`, history preserved). `/ads` itself keeps its route and
+    content (real Google Ads data, `lib/google-ads.ts`), just renamed
+    "Publicidad y campañas" → "Campañas publicitarias" in its `PageHeader`.
+    Updated every reference that hardcoded the old paths:
+    `app/(dashboard)/[client]/ads/leads/actions.ts`'s `revalidatePath`,
+    `components/lead-detail-modal.tsx`'s server-action import path, the
+    moved Funnels page's own `PageHeader`/error-state titles and default
+    export name (`LeadsPage` → `FunnelsPage`, was misleading once both
+    pages lived under the same `ads/` tree), and `components/export-pdf-button.tsx`'s
+    `PAGE_TITLES` map.
+  - **`components/topbar.tsx`'s `SECTIONS`** gained an optional
+    `children: NavLeaf[]` per top-level entry — only "Paid media" has one
+    today. `SectionNav` renders a second, smaller tab row below the main
+    one *only* while a section with children is active (i.e., only on any
+    `/ads/*` page), using exact-path equality for the children (each is a
+    distinct terminal page) vs. the top row's existing `startsWith` check
+    (Paid media itself must stay "active" across all 4 of its children's
+    paths). Both rows keep the same `overflow-x-auto` + edge-fade mobile
+    pattern already established for the top row (see the 2026-08-19 mobile
+    overflow fix above) — verified live at a 375px viewport via the same
+    `scrollWidth`/`clientWidth` sweep technique documented there: no
+    page-wide overflow from adding the second row.
+  - **New `/ads/roi` page — simulated**, per explicit client request ("la
+    seccion de ROI es nueva, ahi vamos a poner datos simulados... el
+    historico de ventas con un resumen... en una estructura de referencia
+    como el screenshot que te envio" — a monthly historial table:
+    month / ad spend / ad clicks / leads / conversions / a "Ver detalles"
+    action / final sales, with a summary above it). Implemented as:
+    - `lib/mock-data.ts`'s new `getRoiHistory(client, range, monthCount=12)`
+      — unlike every other generator in that file, **each month is seeded
+      by its own key** (`${client}:roi:2026-07`), not by the selected date
+      range, so a given month's numbers stay fixed regardless of which
+      range you're viewing it through (the whole point of a "historial" —
+      the other generators only ever show one period's totals, so
+      reseeding per range there is correct and doesn't apply here). Which
+      *months* appear does still move with the global date-range picker
+      (per this app's "every page respects the range picker" convention)
+      by anchoring the trailing `monthCount` months on `range.endDate`'s
+      month.
+    - **Total sales is derived directly from ad spend via a plausible ROAS
+      multiplier (3x–12x), not from `conversions × avg ticket`** — the
+      latter was tried first and produced wild outliers (~80x ROAS in one
+      test run) from compounding three independent random factors.
+      Per-campaign breakdown (`RoiCampaignBreakdown`, a fixed 4-campaign
+      list reused conceptually from the Ads mock data's `CAMPAIGNS`) is
+      split proportionally from each month's totals with the last
+      campaign absorbing the rounding remainder, so a month's campaigns
+      always sum exactly to that month's own row — verified live in the
+      "Ver detalles" dialog.
+    - `components/roi-month-detail.tsx` (new, Client Component) — the
+      "Ver detalles" dashed-outline trigger + `Dialog` per month, styled
+      per the reference screenshot. Trigger uses `buttonVariants(...)`
+      directly on `DialogTrigger` rather than nesting a `<Button asChild>`
+      inside it — this project's Base UI shadcn setup doesn't support
+      Radix's `asChild` on triggers, see the Design system section above.
+    - Page carries `<SourceStatusBadge connected={false} />` like every
+      other simulated page (SEO/Ads did before going real; Social still
+      does) — CLAUDE.md previously called this component `SimulatedBadge`
+      in a couple of places; that name doesn't exist in the code, `SourceStatusBadge`
+      (`connected: false` branch) is and always was the same thing, just
+      under its real name.
+  - Verified live end-to-end (real browser, real click-through, not just
+    build-clean): all 4 Paid media sub-pages render at their new URLs with
+    the submenu correctly highlighting the active one, the lead
+    qualification modal still opens (confirms the moved server-action
+    import didn't break), ROI's campaign breakdown dialog sums exactly to
+    its row, and a 375px mobile sweep showed zero page-wide overflow from
+    the new second nav row.
+
 ## Not yet done
 - **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
   2026-08-18 but has no real credentials yet** — no `CLIENT_NUMA_*` env
@@ -789,7 +878,7 @@ Dev server launch config lives in `.claude/launch.json` (for the
   file and don't trust a type here you haven't re-verified if the
   OpenPanel API changes.
 - `components/ui-kit.tsx` — dashboard-specific presentational components
-  (`PageHeader`, `StatCard`, `Section`, `SimulatedBadge`, `ErrorCard`,
+  (`PageHeader`, `StatCard`, `Section`, `SourceStatusBadge`, `ErrorCard`,
   `ComingSoon`) built on top of `components/ui/card.tsx` etc. This is
   distinct from `components/ui/` (raw shadcn primitives) — extend this
   file for new dashboard-shaped UI, extend `components/ui/` only via the

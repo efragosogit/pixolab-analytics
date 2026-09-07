@@ -270,6 +270,129 @@ export function getSocialPosts(client: string, range: DateRange): SocialPost[] {
 }
 
 // ---------------------------------------------------------------------------
+// ROI (Paid media) — simulated until the CRM (Twenty) is cross-referenced
+// against real ad spend to know which closed sales actually came from which
+// campaign/month. See CLAUDE.md "Not yet done" for the same caveat already
+// documented for the Leads→CRM link on the Funnels page.
+// ---------------------------------------------------------------------------
+
+export interface RoiCampaignBreakdown {
+  name: string;
+  spend: number;
+  leads: number;
+  conversions: number;
+  sales: number;
+}
+
+export interface RoiMonth {
+  /** "2026-07" — the page formats this into a locale label, not this file. */
+  key: string;
+  adSpend: number;
+  adClicks: number;
+  leads: number;
+  conversions: number;
+  totalSales: number;
+  campaigns: RoiCampaignBreakdown[];
+}
+
+export interface RoiHistory {
+  /** Chronological, oldest first — matches the reference layout the client shared. */
+  months: RoiMonth[];
+  totalAdSpend: number;
+  totalLeads: number;
+  totalConversions: number;
+  totalSales: number;
+  roas: number;
+}
+
+const ROI_CAMPAIGNS = [
+  "Búsqueda — Postes de concreto",
+  "Performance Max — Catálogo",
+  "Remarketing — Visitantes de producto",
+  "Prospección — Municipios y constructoras",
+];
+
+/**
+ * Every month is seeded by its own key (`client:roi:2026-07`), not by the
+ * selected date range — a "historial" should show the same numbers for
+ * July regardless of whether you're viewing it through a 3-month or a
+ * 12-month window, unlike the other generators here (SEO/Ads/Social),
+ * which intentionally reseed per range since they only ever show one
+ * period's totals, never a fixed calendar timeline.
+ */
+function seedMonth(client: string, key: string): () => number {
+  return mulberry32(seedFromRange({ startDate: key, endDate: key }, `${client}:roi`));
+}
+
+/**
+ * `monthCount` calendar months ending on the month of `range.endDate` —
+ * moving the global date-range picker's end date shifts which months
+ * appear (so the page still "respects the date range" per this app's
+ * convention) without needing real per-day granularity, which a monthly
+ * sales historial doesn't have anyway.
+ */
+export function getRoiHistory(client: string, range: DateRange, monthCount = 12): RoiHistory {
+  const anchor = new Date(`${range.endDate}T00:00:00Z`);
+  const monthKeys: string[] = [];
+  for (let i = monthCount - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - i, 1));
+    monthKeys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+
+  const months: RoiMonth[] = monthKeys.map((key) => {
+    const rand = seedMonth(client, key);
+    const adSpend = Math.round(2500 + rand() * 6500);
+    const adClicks = Math.round(adSpend / (4 + rand() * 4));
+    const leads = Math.max(1, Math.round(adClicks * (0.02 + rand() * 0.05)));
+    const conversions = Math.max(0, Math.round(leads * (0.2 + rand() * 0.4)));
+    // Total sales is derived directly from ad spend via a plausible ROAS
+    // band (3x–12x — a B2B ticket-size business like this client's can
+    // genuinely run high ROAS), NOT from conversions × avg ticket — that
+    // compounds three independent random factors and produced wildly
+    // unrealistic ROAS outliers (80x+) during testing.
+    const roasThisMonth = 3 + rand() * 9;
+    const totalSales = Math.round(adSpend * roasThisMonth);
+
+    // Split the month's totals across a fixed campaign list — the last
+    // campaign absorbs the remainder so the breakdown always sums exactly
+    // to the month's own numbers instead of drifting from rounding.
+    let remainingSpend = adSpend;
+    let remainingLeads = leads;
+    let remainingConversions = conversions;
+    let remainingSales = totalSales;
+    const campaigns: RoiCampaignBreakdown[] = ROI_CAMPAIGNS.map((name, i) => {
+      const isLast = i === ROI_CAMPAIGNS.length - 1;
+      const share = 0.15 + rand() * 0.3;
+      const spend = isLast ? remainingSpend : Math.round(adSpend * share);
+      const campLeads = isLast ? remainingLeads : Math.round(leads * share);
+      const campConversions = isLast ? remainingConversions : Math.round(conversions * share);
+      const sales = isLast ? remainingSales : Math.round(totalSales * share);
+      remainingSpend -= spend;
+      remainingLeads -= campLeads;
+      remainingConversions -= campConversions;
+      remainingSales -= sales;
+      return { name, spend, leads: campLeads, conversions: campConversions, sales };
+    });
+
+    return { key, adSpend, adClicks, leads, conversions, totalSales, campaigns };
+  });
+
+  const totalAdSpend = months.reduce((s, m) => s + m.adSpend, 0);
+  const totalLeads = months.reduce((s, m) => s + m.leads, 0);
+  const totalConversions = months.reduce((s, m) => s + m.conversions, 0);
+  const totalSales = months.reduce((s, m) => s + m.totalSales, 0);
+
+  return {
+    months,
+    totalAdSpend,
+    totalLeads,
+    totalConversions,
+    totalSales,
+    roas: totalAdSpend > 0 ? totalSales / totalAdSpend : 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Leads (prospects table) — simulated until the real capture pipeline (GTM
 // → dashboard webhook → database) is decided and built. See CLAUDE.md
 // "Not yet done" for why this stays mocked even though the underlying

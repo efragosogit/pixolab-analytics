@@ -32,6 +32,6 @@ export async function saveLeadQualification(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  revalidatePath(`/${client}/leads`);
+  revalidatePath(`/${client}/ads/leads`);
   return { ok: true };
 }

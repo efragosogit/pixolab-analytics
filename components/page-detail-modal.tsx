@@ -47,7 +47,7 @@ const StatBlock = ({ label, value, icon }: { label: string; value: string; icon:
  * list of improvement recommendations (see `lib/page-insights.ts`).
  *
  * Triggered from three places (`/performance`'s table,
- * `/conversiones`'s "Páginas que más generan clics", and the home page's
+ * `/ads/funnels`'s "Páginas que más generan clics", and the home page's
  * "Páginas más visitadas") via `components/clickable-page-bars.tsx` and
  * `components/performance-table.tsx` — both just manage a `selectedPath`
  * string and look the matching `PagePerformance` row up from whatever

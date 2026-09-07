@@ -476,7 +476,7 @@ function bump(counts: Map<string, number>, key: string) {
 /**
  * Breakdown of one event's raw occurrences by page, MX state, hour-of-day,
  * device, and referrer type — built for the "Detalle del embudo de
- * WhatsApp" section on `/conversiones`, but generic to any single event
+ * WhatsApp" section on `/ads/funnels`, but generic to any single event
  * name. Deliberately raw-count based (not deduped by `profile_id` like
  * `getUniqueLeadCount`) — this answers "where/when do clicks happen",
  * which is naturally a count of actions, not people; a lead who clicks

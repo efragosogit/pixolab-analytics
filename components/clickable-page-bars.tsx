@@ -8,7 +8,7 @@ import { PageDetailModal } from "@/components/page-detail-modal";
 /**
  * `RankedBars` for pages specifically, wired to open `PageDetailModal` on
  * row click. Used by the home page's "Páginas más visitadas" and
- * `/conversiones`'s "Páginas que más generan clics" — both places rank
+ * `/ads/funnels`'s "Páginas que más generan clics" — both places rank
  * pages by a metric `/pages/performance` doesn't itself return
  * (pageviews, WhatsApp clicks), so `rows` (what's displayed/ranked) and
  * `pages` (the full `/pages/performance` list, fetched separately by the
