@@ -8,11 +8,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TableScroll } from "@/components/table-scroll";
 import { LeadDetailModal } from "@/components/lead-detail-modal";
 
-const SOURCE_COLOR: Record<LeadDisplay["source"], string> = {
-  "Formulario de contacto": "var(--chart-1)",
-  "Descarga de catálogo": "var(--chart-2)",
-};
-
 // 1 (no apto) is a neutral "not a real prospect" state, not literally
 // "worse" than the others in the same sense 2-5 rank against each other —
 // styled muted/dashed rather than on the good→critical scale below.
@@ -42,15 +37,19 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-MX", {
   timeZone: "America/Mexico_City",
 });
 
-type SourceFilter = "all" | LeadDisplay["source"];
+/** "all" or a `leads.source` key. */
+type SourceFilter = string;
 
 export function LeadsTable({
   client,
   leads,
+  sources,
   qualifierOptions,
 }: {
   client: string;
   leads: LeadDisplay[];
+  /** The client's form conversions, in display order — one filter tab each. */
+  sources: { key: string; label: string }[];
   qualifierOptions: string[];
 }) {
   const [filter, setFilter] = useState<SourceFilter>("all");
@@ -58,7 +57,7 @@ export function LeadsTable({
   const [modalOpen, setModalOpen] = useState(false);
 
   const filtered = useMemo(
-    () => (filter === "all" ? leads : leads.filter((l) => l.source === filter)),
+    () => (filter === "all" ? leads : leads.filter((l) => l.sourceKey === filter)),
     [leads, filter],
   );
 
@@ -73,16 +72,19 @@ export function LeadsTable({
   return (
     <div className="flex flex-col gap-4">
       <Tabs value={filter} onValueChange={(v) => setFilter(v as SourceFilter)}>
-        {/* TabsList is `w-fit` (shadcn default) — these three Spanish
+        {/* TabsList is `w-fit` (shadcn default) — several Spanish source
             labels together don't fit a phone width, and with nothing to
             scroll them it just silently clipped past the card edge with
-            no way to reach "Descarga de catálogo" at all. Own scroll
-            container, same fix as Topbar's action row. */}
+            no way to reach the last tab at all. Own scroll container,
+            same fix as Topbar's action row. */}
         <div className="scrollbar-none -mx-1 overflow-x-auto px-1">
           <TabsList className="w-max">
             <TabsTrigger value="all">Todas las fuentes</TabsTrigger>
-            <TabsTrigger value="Formulario de contacto">Formulario de contacto</TabsTrigger>
-            <TabsTrigger value="Descarga de catálogo">Descarga de catálogo</TabsTrigger>
+            {sources.map((s) => (
+              <TabsTrigger key={s.key} value={s.key}>
+                {s.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </div>
       </Tabs>
@@ -129,9 +131,9 @@ export function LeadsTable({
                     <Badge
                       variant="outline"
                       style={{
-                        borderColor: `${SOURCE_COLOR[lead.source]}66`,
-                        color: SOURCE_COLOR[lead.source],
-                        backgroundColor: `${SOURCE_COLOR[lead.source]}1a`,
+                        borderColor: `color-mix(in oklch, ${lead.sourceColor} 40%, transparent)`,
+                        color: lead.sourceColor,
+                        backgroundColor: `color-mix(in oklch, ${lead.sourceColor} 10%, transparent)`,
                       }}
                     >
                       {lead.source}

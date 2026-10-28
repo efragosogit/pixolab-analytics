@@ -106,6 +106,37 @@ async function searchAnalyticsQuery(
   }));
 }
 
+// --- Properties the shared service account can read ---
+
+/** The email a client must add as a user on their Search Console property — not a secret. */
+export function getGscServiceAccountEmail(): string | null {
+  return SERVICE_ACCOUNT_EMAIL ?? null;
+}
+
+export interface GscSite {
+  siteUrl: string;
+  permissionLevel: string;
+}
+
+/**
+ * Every Search Console property this service account has been added to —
+ * what the Configuración page offers as choices, so nobody has to type a
+ * `sc-domain:` vs `https://` property id by hand (they aren't
+ * interchangeable, see this file's header). A property only shows up here
+ * after the client adds GOOGLE_SERVICE_ACCOUNT_EMAIL as a user on it.
+ */
+export async function listGscSites(): Promise<GscSite[]> {
+  assertConfigured();
+  const searchconsole = google.searchconsole({ version: "v1", auth: getAuthClient() });
+  const res = await searchconsole.sites.list();
+  return (res.data.siteEntry ?? [])
+    .filter((s): s is { siteUrl: string; permissionLevel: string } =>
+      Boolean(s.siteUrl && s.permissionLevel && s.permissionLevel !== "siteUnverifiedUser"),
+    )
+    .map((s) => ({ siteUrl: s.siteUrl, permissionLevel: s.permissionLevel }))
+    .sort((a, b) => a.siteUrl.localeCompare(b.siteUrl));
+}
+
 // --- Overview: totals for the range + a daily series ---
 
 export interface SeoOverview {

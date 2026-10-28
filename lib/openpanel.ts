@@ -303,7 +303,7 @@ export function getEvents(
 }
 
 /** All calendar days in `range`, inclusive, as YYYY-MM-DD strings. */
-function enumerateDays(range: DateRange): string[] {
+export function enumerateDays(range: DateRange): string[] {
   const days: string[] = [];
   const start = new Date(`${range.startDate}T00:00:00Z`);
   const end = new Date(`${range.endDate}T00:00:00Z`);

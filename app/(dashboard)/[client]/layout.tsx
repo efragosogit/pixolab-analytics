@@ -56,6 +56,7 @@ export default async function ClientDashboardLayout({
         client={client}
         clientDisplayName={clientRow.displayName}
         clientFaviconPath={clientRow.faviconPath}
+        clientIsDraft={clientRow.isDraft}
         userEmail={user.email}
         collaborators={collaborators}
         canManageSharing={canManageAccess(user.email)}

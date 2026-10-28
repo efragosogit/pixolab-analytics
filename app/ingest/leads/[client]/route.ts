@@ -27,12 +27,19 @@
  * path, so there was nothing live left to preserve compatibility with.
  * Every client, including Lumiservicios, uses this per-client route.
  *
- * Auth: a shared secret in the `x-ingest-secret` header — NOT a real
- * secret in the security sense (ships inside client-side JS on a public
- * website, readable via devtools). Its job is cutting drive-by noise, not
- * gating a motivated attacker. One secret shared across every client
- * (`LEADS_INGEST_SECRET`) — see CLAUDE.md for why that's an acceptable
- * simplification here.
+ * Auth: a secret in the `x-ingest-secret` header — NOT a real secret in
+ * the security sense (ships inside client-side JS on a public website,
+ * readable via devtools). Its job is cutting drive-by noise, not gating a
+ * motivated attacker. Since 2026-10-28 each client can have its own
+ * (generated from Configuración → Leads, stored encrypted in
+ * `client_integrations`); a client without one falls back to the global
+ * `LEADS_INGEST_SECRET`, which is what Lumiservicios' live GTM tag still
+ * sends. A client WITH its own secret only accepts that one.
+ *
+ * Accepted `source` values are the client's form conversions
+ * (`client_conversions` rows with kind 'form', see
+ * db/migrations/006_client_settings.sql) — this used to be a hardcoded
+ * enum of Lumiservicios' two forms.
  *
  * `Access-Control-Allow-Origin` is looked up per-client from
  * `clients.allowed_origin` (see db/migrations/005_client_allowed_origin.sql)
@@ -41,7 +48,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { insertLead } from "@/lib/leads-db";
-import { getClientRow } from "@/lib/client-config";
+import { getClientConfig, getClientRow } from "@/lib/client-config";
 
 function corsHeaders(allowedOrigin: string) {
   return {
@@ -52,7 +59,7 @@ function corsHeaders(allowedOrigin: string) {
 }
 
 const payloadSchema = z.object({
-  source: z.enum(["form_submitted", "catalog_download"]),
+  source: z.string().trim().min(1).max(60),
   name: z.string().trim().min(1).max(200).optional(),
   email: z.string().trim().email().max(200).optional(),
   phone: z.string().trim().max(50).optional(),
@@ -78,13 +85,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ client:
   }
   const headers = corsHeaders(row.allowedOrigin);
 
-  const secret = process.env.LEADS_INGEST_SECRET;
+  const config = await getClientConfig(client);
+  const secret = config.leadsIngestSecret ?? process.env.LEADS_INGEST_SECRET;
   if (!secret) {
     return NextResponse.json({ error: "Ingest not configured" }, { status: 503, headers });
   }
   if (req.headers.get("x-ingest-secret") !== secret) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
   }
+  const formSources = new Set(
+    config.conversions.filter((c) => c.kind === "form").map((c) => c.key),
+  );
 
   let body: unknown;
   try {
@@ -97,6 +108,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ client:
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid payload", details: parsed.error.flatten() },
+      { status: 400, headers },
+    );
+  }
+  if (!formSources.has(parsed.data.source)) {
+    return NextResponse.json(
+      { error: "Unknown source", allowed: [...formSources] },
       { status: 400, headers },
     );
   }

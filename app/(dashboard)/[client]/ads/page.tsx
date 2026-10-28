@@ -8,6 +8,7 @@ import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/c
 import { TrendArea } from "@/components/charts";
 import { TableScroll } from "@/components/table-scroll";
 import { Badge } from "@/components/ui/badge";
+import { NotConnected } from "@/components/not-connected";
 
 export const dynamic = "force-dynamic";
 
@@ -30,15 +31,20 @@ export default async function AdsPage({
   let prevOverview: Awaited<ReturnType<typeof getAdsOverview>> | null = null;
   let campaigns: Awaited<ReturnType<typeof getAdsCampaigns>> = [];
   let customerId = "";
+  let notConnected = false;
 
   try {
     const config = await getClientConfig(client);
-    customerId = config.googleAdsCustomerId;
-    [overview, prevOverview, campaigns] = await Promise.all([
-      getAdsOverview(customerId, range),
-      getAdsOverview(customerId, prev),
-      getAdsCampaigns(customerId, range),
-    ]);
+    if (!config.googleAdsCustomerId) {
+      notConnected = true;
+    } else {
+      customerId = config.googleAdsCustomerId;
+      [overview, prevOverview, campaigns] = await Promise.all([
+        getAdsOverview(customerId, range),
+        getAdsOverview(customerId, prev),
+        getAdsCampaigns(customerId, range),
+      ]);
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -48,11 +54,13 @@ export default async function AdsPage({
       <PageHeader
         eyebrow="Paid media · Google Ads"
         title="Campañas publicitarias"
-        description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}. Conectado directo a Google Ads (OAuth, cuenta ${customerId}) — ver lib/google-ads.ts. Meta Ads todavía no está conectado.`}
-        action={<SourceStatusBadge connected={!error} />}
+        description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}. ${customerId ? `Conectado directo a Google Ads (OAuth, cuenta ${customerId}) — ver lib/google-ads.ts. ` : ""}Meta Ads todavía no está conectado.`}
+        action={notConnected ? undefined : <SourceStatusBadge connected={!error} />}
       />
 
-      {error || !overview ? (
+      {notConnected ? (
+        <NotConnected client={client} integration="google_ads" />
+      ) : error || !overview ? (
         <ErrorCard message={error ?? "Sin datos"} />
       ) : (
         <>

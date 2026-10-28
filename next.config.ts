@@ -31,6 +31,13 @@ const nextConfig: NextConfig = {
   // container needs the whole dependency tree present, which is both a
   // much larger image and requires devDependencies too.
   output: "standalone",
+  // `next dev` logs every Server Function call with its arguments by
+  // default — that printed login passwords, and would print the OpenPanel
+  // client secret pasted into Configuración, straight into the dev
+  // terminal/log panel. Dev-only behavior, but off on purpose.
+  logging: {
+    serverFunctions: false,
+  },
 };
 
 export default nextConfig;

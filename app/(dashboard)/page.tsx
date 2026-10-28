@@ -1,8 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ActivityIcon, ArrowRightIcon, LayoutDashboardIcon } from "lucide-react";
+import { ActivityIcon, ArrowRightIcon, LayoutDashboardIcon, PlusIcon } from "lucide-react";
 import { requireUser } from "@/lib/auth/session";
-import { getAccessibleClients } from "@/lib/auth/users";
+import { canManageAccess, getAccessibleClients } from "@/lib/auth/users";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 
@@ -29,6 +29,9 @@ function friendlyDomain(origin: string | null): string | null {
 export default async function ClientPickerPage() {
   const user = await requireUser();
   const clients = await getAccessibleClients(user.id, user.email);
+  // Staff-only "Agregar nuevo dashboard" card — same rule as managing
+  // access (see lib/auth/users.ts's canManageAccess).
+  const canCreate = canManageAccess(user.email);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -46,7 +49,7 @@ export default async function ClientPickerPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-16">
-        {clients.length === 0 ? (
+        {clients.length === 0 && !canCreate ? (
           <div className="animate-in fade-in slide-in-from-bottom-2 text-center duration-300">
             <span className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-muted">
               <LayoutDashboardIcon className="size-5 text-muted-foreground" strokeWidth={2} />
@@ -63,9 +66,11 @@ export default async function ClientPickerPage() {
               Hola, {user.email.split("@")[0]}
             </h1>
             <p className="mt-1.5 mb-8 text-sm text-muted-foreground">
-              {clients.length === 1
-                ? "Tienes acceso a un dashboard."
-                : `Tienes acceso a ${clients.length} dashboards. Elige uno para empezar.`}
+              {clients.length === 0
+                ? "Todavía no hay dashboards. Crea el primero."
+                : clients.length === 1
+                  ? "Tienes acceso a un dashboard."
+                  : `Tienes acceso a ${clients.length} dashboards. Elige uno para empezar.`}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {clients.map((c) => {
@@ -96,7 +101,13 @@ export default async function ClientPickerPage() {
                         {c.displayName}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {domain ?? "Dashboard de analytics"}
+                        {c.isDraft ? (
+                          <span className="font-medium text-status-warning">
+                            Borrador · configuración en curso
+                          </span>
+                        ) : (
+                          (domain ?? "Dashboard de analytics")
+                        )}
                       </span>
                     </span>
                     <ArrowRightIcon
@@ -106,6 +117,20 @@ export default async function ClientPickerPage() {
                   </Link>
                 );
               })}
+              {canCreate && (
+                <Link
+                  href="/nuevo"
+                  className="group flex items-center gap-3.5 rounded-xl border border-dashed border-border p-4 text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50 hover:text-foreground"
+                >
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-muted transition-colors group-hover:bg-primary/15 group-hover:text-primary">
+                    <PlusIcon className="size-5" strokeWidth={2} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">Agregar nuevo dashboard</span>
+                    <span className="block truncate text-xs">Solo equipo Pixolab</span>
+                  </span>
+                </Link>
+              )}
             </div>
           </div>
         )}

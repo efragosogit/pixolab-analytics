@@ -11,7 +11,12 @@ export interface LeadDisplay {
   name: string;
   email: string;
   phone: string;
-  source: "Formulario de contacto" | "Descarga de catálogo";
+  /** Display label of the lead's form conversion (see client_conversions). */
+  source: string;
+  /** The raw `leads.source` value — what the source filter tabs match on. */
+  sourceKey: string;
+  /** CSS color for the source badge, same order as the Funnels chart series. */
+  sourceColor: string;
   page: string;
   date: string; // full ISO timestamp
   detail: string;

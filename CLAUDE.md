@@ -200,7 +200,14 @@ funnels. Two other pieces of context that matter but live elsewhere:
   access to) — connecting a source straight to this dashboard, like SEO
   and Ads now do, is equally valid and sometimes simpler.
 
-## Current state (2026-09-07 — re-verify, don't trust blindly)
+## Current state (2026-10-28 — re-verify, don't trust blindly)
+
+**Per-client settings moved from env vars to the DB on 2026-10-28**, with a
+staff-only Configuración page per dashboard and an "Agregar nuevo
+dashboard" wizard — see "Done since the redesign, continued (2026-10-28)"
+below. Funnels/Leads/the ingest webhook no longer hardcode Lumiservicios'
+events and pages; they read each client's `client_conversions`.
+
 
 **Nav was restructured again 2026-09-07** — see "Done since the redesign,
 continued (2026-09-07)" below for the full rationale. The short version:
@@ -223,6 +230,8 @@ route and nav grouping moved.
 | — Leads | `/ads/leads` | **Real data.** A prospects table (`components/leads-table.tsx`) reading Postgres via `lib/leads-db.ts` — name/email/phone/source/detail/date+time (Mexico City tz), filterable by source via tabs, click a row to open a qualification modal (1-5 rating + observations, see "Done since the redesign, continued (2026-08-11)" below). Two sources only: Formulario de contacto, Descarga de catálogo. WhatsApp is deliberately excluded (no CRM access to those conversations). 57 historical leads backfilled from CF7DB 2026-08-11, a further gap (2026-08-06 → 2026-08-17, caused by the GTM tag update having been pending, see "Fixed 2026-08-13: this app's own `/api/*` routes are unreachable" above) backfilled 2026-08-17 the same way; Lumiservicios' live GTM container now actually calls `/ingest/leads/lumiservicios` and new leads arrive automatically — verified live with two real submissions the same day. `lib/mock-data.ts`'s `getLeads` is now dead code for this page, kept for reference. (Was a flat top-level `/leads` before 2026-09-07.) |
 | — ROI | `/ads/roi` | **Simulated**, new 2026-09-07. Monthly historial (inversión/clics/leads/conversiones/ventas totales, "Ver detalles" per-campaign breakdown) — see the 2026-09-07 entry below for why and how. |
 | Social media | `/social` | **Simulated**, no real source planned yet (needs Meta Graph API + TikTok for Business) |
+| Configuración | `/[client]/configuracion` | **Staff-only** (@pixolab.com.mx, 404 for anyone else), gear icon in the Topbar. Connect/test OpenPanel, Search Console, Google Ads, Leads (webhook + GTM snippet), edit conversions, publish/unpublish. New 2026-10-28. |
+| Nuevo dashboard | `/nuevo` | **Staff-only.** Step 1 of the wizard (name, slug, site); every later step is Configuración with `?asistente=1&paso=…`. Reached from the "Agregar nuevo dashboard" card on the picker. New 2026-10-28. |
 
 Every page respects the global date-range picker (top bar) and is
 `tsc`/`lint`/`pnpm build` clean as of the last real update.
@@ -803,12 +812,73 @@ need to change, and delete that page's generator functions from
     its row, and a 375px mobile sweep showed zero page-wide overflow from
     the new second nav row.
 
+## Done since the redesign, continued (2026-10-28)
+
+- **Database moved off `pixolab-infra` onto the Pixolab-apps server**,
+  private (no public port), next to the app — see `_infra/README.md`.
+  Local dev reaches it with `pnpm db:tunnel` (`scripts/db-tunnel.sh`):
+  that IS the production DB, not a copy.
+- **New dashboards are created from the app, no Coolify edit needed.**
+  Picker card "Agregar nuevo dashboard" (staff-only) → `/nuevo` (name,
+  slug, site; creates the `clients` row as a **draft**, fetches the
+  favicon, generates a per-client ingest secret) → the new dashboard's
+  Configuración page in wizard mode (`?asistente=1&paso=openpanel|gsc|
+  google_ads|leads|conversions|publicar`), one section per step, each
+  skippable. Drafts are visible only to staff (picker badge, Topbar
+  "Borrador" badge; `getAccessibleClients`/`hasClientAccess` exclude them
+  for everyone else) until published from the last step.
+- **Schema**: `db/migrations/006_client_settings.sql` — `clients.is_draft`
+  + `created_by`, `client_integrations` (one row per client × openpanel/
+  gsc/google_ads/leads; non-secret fields in `config` JSON, secrets only in
+  `secret_ciphertext`, AES-256-GCM via `lib/secrets.ts` with the
+  `CONFIG_ENCRYPTION_KEY` env var — backup copy in
+  `pixolab-agents/pixolab-cloud/.secrets.env`; losing it means re-entering
+  OpenPanel/ingest secrets from Configuración), `client_conversions`.
+  Read side: `lib/client-config.ts`; storage/write side:
+  `lib/client-settings.ts`; actions: `app/(dashboard)/[client]/configuracion/actions.ts`
+  (each re-checks staff); connection tests: `lib/integration-checks.ts`
+  (OpenPanel test bypasses `opFetch`'s 5-min cache on purpose).
+- **Env-var fallback**: a client with no `client_integrations` row for an
+  integration still reads `CLIENT_<SLUG>_*`. Lumiservicios was copied into
+  the DB with `scripts/seed-client-integrations.mjs lumiservicios`
+  (verified: all three "Probar conexión" pass reading from the DB). Its
+  `CLIENT_LUMISERVICIOS_*` vars are still in Coolify as a rollback but are
+  no longer read. "Desconectar" writes an *empty* row instead of deleting
+  it, precisely so the env fallback can't silently reconnect a client.
+- **Every integration is optional now**: a missing one makes `getClientConfig`
+  return `null` for it and the page renders `components/not-connected.tsx`
+  (with a "Ir a Configuración" link for staff) instead of an ErrorCard.
+- **Conversions are configurable** (`client_conversions`): kind `event` =
+  an OpenPanel event name (one real `/funnel` screen_view → event per
+  conversion, counted as unique people); kind `form` = a `leads.source`
+  value posted to the webhook, with the form's page path (3-stage funnel,
+  counted from Postgres). Funnels/Leads/the webhook all read this list —
+  Lumiservicios' three were seeded by the migration with its old values,
+  numbers verified identical (Leads total 306 = 292 WhatsApp + 12 form + 2
+  catalog on the same 30-day range, on both pages). Small visible changes
+  for Lumiservicios: the WhatsApp funnel title is now its label
+  ("WhatsApp", was "Clic WhatsApp"), form funnels' last stage is "Leads
+  registrados", and "Leads por día" now includes catalog downloads and
+  counts form leads from Postgres (it used to read only OpenPanel's
+  `form_submitted` event). Special multi-step funnels stay manual.
+- **Leads webhook**: accepts only the client's form conversion keys; a
+  client with its own ingest secret only accepts that one, a client without
+  one falls back to the global `LEADS_INGEST_SECRET` (Lumiservicios' live
+  GTM tag). Generating a secret for Lumiservicios from Configuración would
+  break its live GTM until the snippet there is updated — the UI warns.
+  The generated snippet (`lib/leads-snippet.ts`) handles Contact Form 7
+  (`wpcf7mailsent`, form ids are placeholders to fill) and exposes
+  `window.pixolabLead(source, fields)` for any other form.
+- `next.config.ts` sets `logging.serverFunctions: false` — `next dev` was
+  printing Server Action arguments (login passwords, pasted secrets).
+
 ## Not yet done
 - **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
-  2026-08-18 but has no real credentials yet** — no `CLIENT_NUMA_*` env
-  vars exist, so every page for it renders `getClientConfig`'s clear
-  "Missing CLIENT_NUMA_OPENPANEL_CLIENT_ID..." `ErrorCard` instead of
-  crashing (confirmed live). It already shows up correctly in the login
+  2026-08-18 but has no real credentials yet** — since 2026-10-28 it's
+  connected from its Configuración page, not env vars (its Google Ads
+  account, "Numa - FTM · 406-703-2837", already shows in the account
+  list; see the 2026-10-28 entry). The notes below about env vars are
+  from before that. It already shows up correctly in the login
   picker (favicon-less, falls back to the "N" letter avatar) and in the
   Topbar once you're on `/numa/*`. To make it real: same setup as
   Lumiservicios — an OpenPanel "Read" client for NUMA's existing OpenPanel

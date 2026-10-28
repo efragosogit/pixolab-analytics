@@ -15,6 +15,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/ads/leads": "Leads",
   "/ads/roi": "ROI",
   "/social": "Social-media",
+  "/configuracion": "Configuracion",
 };
 
 /** "/lumiservicios/performance" -> "/performance" — strip the client segment before the PAGE_TITLES lookup, or every page silently falls through to "Reporte". */

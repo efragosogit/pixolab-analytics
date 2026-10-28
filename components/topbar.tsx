@@ -9,6 +9,7 @@ import {
   CoinsIcon,
   MegaphoneIcon,
   SearchIcon,
+  SettingsIcon,
   Share2Icon,
   TargetIcon,
   TrendingUpIcon,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import type { Collaborator } from "@/lib/auth/users";
 import { cn } from "@/lib/utils";
+import { buttonVariants } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { ExportPdfButton } from "@/components/export-pdf-button";
 import { ShareDialog } from "@/components/share-dialog";
@@ -168,6 +170,7 @@ export function Topbar({
   client,
   clientDisplayName,
   clientFaviconPath,
+  clientIsDraft,
   userEmail,
   collaborators,
   canManageSharing,
@@ -176,6 +179,8 @@ export function Topbar({
   client: string;
   clientDisplayName: string;
   clientFaviconPath: string | null;
+  /** Unpublished dashboard (only staff can reach it) — badged so it's never mistaken for a live one. */
+  clientIsDraft: boolean;
   userEmail: string;
   collaborators: Collaborator[];
   canManageSharing: boolean;
@@ -210,9 +215,15 @@ export function Topbar({
             <span className="hidden truncate text-base font-semibold leading-none tracking-tight text-foreground sm:inline sm:text-lg">
               {clientDisplayName}
             </span>
-            <span className="hidden shrink-0 rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
-              Dashboard
-            </span>
+            {clientIsDraft ? (
+              <span className="shrink-0 rounded-full border border-dashed border-status-warning/50 bg-status-warning/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-status-warning">
+                Borrador
+              </span>
+            ) : (
+              <span className="hidden shrink-0 rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
+                Dashboard
+              </span>
+            )}
           </Link>
 
           {/*
@@ -239,6 +250,18 @@ export function Topbar({
               canManage={canManageSharing}
               currentUserId={currentUserId}
             />
+            {/* Configuración is staff-only — same rule as managing who has
+                access, so it rides on the same flag. */}
+            {canManageSharing && (
+              <Link
+                href={`/${client}/configuracion`}
+                aria-label="Configuración"
+                title="Configuración"
+                className={buttonVariants({ variant: "outline", size: "icon" })}
+              >
+                <SettingsIcon />
+              </Link>
+            )}
             <ExportPdfButton client={client} clientDisplayName={clientDisplayName} />
             <ThemeToggle />
             <UserMenu email={userEmail} />

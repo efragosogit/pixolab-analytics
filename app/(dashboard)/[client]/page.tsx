@@ -13,6 +13,7 @@ import { percentDelta, previousRange, resolveRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { RankedBars, TrendArea } from "@/components/charts";
 import { ClickablePageBars } from "@/components/clickable-page-bars";
+import { NotConnected } from "@/components/not-connected";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function TrafficPage({
   const prev = previousRange(range);
 
   let error: string | null = null;
+  let notConnected = false;
   let overview: Awaited<ReturnType<typeof getOverview>> | null = null;
   let prevOverview: Awaited<ReturnType<typeof getOverview>> | null = null;
   let topPages: Awaited<ReturnType<typeof getTopPages>> = [];
@@ -49,24 +51,29 @@ export default async function TrafficPage({
 
   try {
     const config = await getClientConfig(client);
-    let pagePerformanceResult: Awaited<ReturnType<typeof getPagePerformance>>;
-    [overview, prevOverview, topPages, referrers, devices, pagePerformanceResult] =
-      await Promise.all([
-        getOverview(config.openpanel, range),
-        getOverview(config.openpanel, prev),
-        getTopPages(config.openpanel, range),
-        getTrafficReferrers(config.openpanel, range),
-        getTrafficDevices(config.openpanel, range),
-        // High limit, not the 8 actually displayed below — this is also
-        // the lookup pool for ClickablePageBars' detail modal, and
-        // "Páginas más visitadas" ranks by pageviews while this endpoint
-        // ranks its own top-N by sessions, so the two lists don't line up
-        // 1:1; a generous limit maximizes the chance a clicked page is
-        // found (confirmed live: this endpoint has no ~100-row cap like
-        // /events does, 230/230 pages came back for a real 30-day range).
-        getPagePerformance(config.openpanel, range, 200),
-      ]);
-    pagePerformance = pagePerformanceResult.pages;
+    const op = config.openpanel;
+    if (!op) {
+      notConnected = true;
+    } else {
+      let pagePerformanceResult: Awaited<ReturnType<typeof getPagePerformance>>;
+      [overview, prevOverview, topPages, referrers, devices, pagePerformanceResult] =
+        await Promise.all([
+          getOverview(op, range),
+          getOverview(op, prev),
+          getTopPages(op, range),
+          getTrafficReferrers(op, range),
+          getTrafficDevices(op, range),
+          // High limit, not the 8 actually displayed below — this is also
+          // the lookup pool for ClickablePageBars' detail modal, and
+          // "Páginas más visitadas" ranks by pageviews while this endpoint
+          // ranks its own top-N by sessions, so the two lists don't line up
+          // 1:1; a generous limit maximizes the chance a clicked page is
+          // found (confirmed live: this endpoint has no ~100-row cap like
+          // /events does, 230/230 pages came back for a real 30-day range).
+          getPagePerformance(op, range, 200),
+        ]);
+      pagePerformance = pagePerformanceResult.pages;
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -85,10 +92,12 @@ export default async function TrafficPage({
         eyebrow="Analytics en vivo · OpenPanel"
         title="Tráfico general"
         description={`${format(parseISO(range.startDate), "d MMM yyyy", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}`}
-        action={<SourceStatusBadge connected={!error} />}
+        action={notConnected ? undefined : <SourceStatusBadge connected={!error} />}
       />
 
-      {error ? (
+      {notConnected ? (
+        <NotConnected client={client} integration="openpanel" />
+      ) : error ? (
         <ErrorCard message={error} />
       ) : (
         <>

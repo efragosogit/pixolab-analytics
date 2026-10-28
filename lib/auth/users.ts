@@ -15,7 +15,13 @@
  * Server-only. Never import from a Client Component.
  */
 import { getPool } from "@/lib/db";
-import { type ClientRow, getClientRow, listActiveClients } from "@/lib/client-config";
+import {
+  CLIENT_COLUMNS,
+  type ClientRow,
+  getClientRow,
+  listActiveClients,
+  toClientRow,
+} from "@/lib/client-config";
 import { sendInviteEmail, sendResetEmail } from "./email";
 import { MIN_PASSWORD_LENGTH, hashPassword, verifyPassword } from "./passwords";
 import { generateToken, hashToken } from "./tokens";
@@ -57,7 +63,9 @@ export async function hasClientAccess(
 ): Promise<boolean> {
   if (canManageAccess(email)) return true;
   const result = await getPool().query(
-    `SELECT 1 FROM client_memberships WHERE user_id = $1 AND client = $2 AND accepted_at IS NOT NULL`,
+    `SELECT 1 FROM client_memberships cm
+     JOIN clients c ON c.slug = cm.client
+     WHERE cm.user_id = $1 AND cm.client = $2 AND cm.accepted_at IS NOT NULL AND NOT c.is_draft`,
     [userId, client],
   );
   return (result.rowCount ?? 0) > 0;
@@ -72,28 +80,17 @@ export async function hasClientAccess(
 export async function getAccessibleClients(userId: string, email: string): Promise<ClientRow[]> {
   if (canManageAccess(email)) return listActiveClients();
 
-  interface Row {
-    slug: string;
-    display_name: string;
-    favicon_path: string | null;
-    active: boolean;
-    allowed_origin: string | null;
-  }
-  const result = await getPool().query<Row>(
-    `SELECT c.slug, c.display_name, c.favicon_path, c.active, c.allowed_origin
+  // Draft dashboards (created from the wizard, not published yet) are
+  // staff-only — never listed here even if someone was already invited.
+  const result = await getPool().query<Parameters<typeof toClientRow>[0]>(
+    `SELECT ${CLIENT_COLUMNS.split(", ").map((c) => `c.${c}`).join(", ")}
      FROM client_memberships cm
      JOIN clients c ON c.slug = cm.client
-     WHERE cm.user_id = $1 AND cm.accepted_at IS NOT NULL AND c.active
+     WHERE cm.user_id = $1 AND cm.accepted_at IS NOT NULL AND c.active AND NOT c.is_draft
      ORDER BY c.display_name ASC`,
     [userId],
   );
-  return result.rows.map((r) => ({
-    slug: r.slug,
-    displayName: r.display_name,
-    faviconPath: r.favicon_path,
-    active: r.active,
-    allowedOrigin: r.allowed_origin,
-  }));
+  return result.rows.map(toClientRow);
 }
 
 export interface Collaborator {

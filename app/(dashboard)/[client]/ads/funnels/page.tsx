@@ -2,29 +2,41 @@ import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 import { ClockIcon, FunnelIcon, TrendingDownIcon } from "lucide-react";
 import {
+  enumerateDays,
   getDailyEventCounts,
   getEventDetail,
   getFunnel,
   getOverview,
   getPagePerformance,
   getUniqueLeadCount,
+  type OpenPanelCreds,
 } from "@/lib/openpanel";
 import { getAdsOverview, getSeoOverview } from "@/lib/mock-data";
 import { getLeadsFromDb } from "@/lib/leads-db";
-import { getClientConfig, type ClientConfig } from "@/lib/client-config";
+import { type Conversion, getClientConfig } from "@/lib/client-config";
 import { resolveRange, type ResolvedRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { JourneyIndicator, type JourneyStage } from "@/components/journey-indicator";
 import { CategoryBars, RankedBars, StackedBars } from "@/components/charts";
 import { ClickablePageBars } from "@/components/clickable-page-bars";
+import { NotConnected } from "@/components/not-connected";
 
 export const dynamic = "force-dynamic";
 
-const LEAD_EVENTS = ["whatsapp_click", "form_submitted"];
-const LEAD_SERIES = [
-  { key: "whatsapp_click", label: "WhatsApp", color: "var(--chart-1)" },
-  { key: "form_submitted", label: "Formulario", color: "var(--chart-2)" },
-];
+/**
+ * What counts as a lead comes from each client's `client_conversions` rows
+ * (db/migrations/006_client_settings.sql, edited from Configuración) — this
+ * page used to hardcode Lumiservicios' three (whatsapp_click,
+ * form_submitted → /contactanos, catalog_download → /catalogo-lumi).
+ *   kind 'event' → one real OpenPanel session funnel (screen_view → event)
+ *                  per conversion, counted as unique people.
+ *   kind 'form'  → one 3-stage funnel (visitas → vista de la página del
+ *                  formulario → leads registrados), the last stage counted
+ *                  from Postgres rows posted by the ingest webhook.
+ */
+function seriesColor(index: number) {
+  return `var(--chart-${(index % 8) + 1})`;
+}
 
 interface FunnelStage {
   label: string;
@@ -33,10 +45,10 @@ interface FunnelStage {
 }
 
 /**
- * Shared bar-funnel visual for all three "embudos" on this page. Two flavors
- * feed it: the real per-session OpenPanel `/funnel` result (WhatsApp — see
- * `WhatsappFunnel`), and a manually-assembled 3-stage flow for the two
- * form-based funnels (see `PageFormFunnel`) — `/funnel`'s `steps` only takes
+ * Shared bar-funnel visual for every "embudo" on this page. Two flavors
+ * feed it: the real per-session OpenPanel `/funnel` result (event
+ * conversions — see `EventFunnel`), and a manually-assembled 3-stage flow
+ * for form conversions (see `PageFormFunnel`) — `/funnel`'s `steps` only takes
  * plain event names, it can't filter a step to "screen_view on this one
  * path", so those two are stitched together from `/overview` +
  * `/pages/performance` + `/events` instead of a single funnel query.
@@ -53,7 +65,7 @@ function StageFunnel({
   overallConversionRate: number;
   /**
    * Overrides the "leads generados" headline instead of deriving it from
-   * the last stage's value. Only `WhatsappFunnel` uses this — OpenPanel's
+   * the last stage's value. Only `EventFunnel` uses this — OpenPanel's
    * `/funnel` requires a strict per-session SEQUENCE match (screen_view
    * immediately followed by whatsapp_click within its own funnel window),
    * so its `completedUsers` undercounts vs. a raw unique-people count of
@@ -139,25 +151,34 @@ function StageFunnel({
   );
 }
 
-/** Embudo 1 — real per-session OpenPanel funnel, unfiltered by path. */
-async function WhatsappFunnel({ config, range }: { config: ClientConfig; range: ResolvedRange }) {
+/** One per event conversion — real per-session OpenPanel funnel, unfiltered by path. */
+async function EventFunnel({
+  op,
+  range,
+  conversion,
+}: {
+  op: OpenPanelCreds;
+  range: ResolvedRange;
+  conversion: Conversion;
+}) {
   let result: Awaited<ReturnType<typeof getFunnel>> | null = null;
   let uniqueLeads: number | null = null;
   let error: string | null = null;
 
   try {
     [result, uniqueLeads] = await Promise.all([
-      getFunnel(config.openpanel, range, ["screen_view", "whatsapp_click"]),
-      // Raw unique whatsapp_click count — deliberately NOT the funnel's own
-      // completedUsers, see StageFunnel's leadsGenerated doc comment.
-      getUniqueLeadCount(config.openpanel, range, ["whatsapp_click"]),
+      getFunnel(op, range, ["screen_view", conversion.key]),
+      // Raw unique count of people who fired the event — deliberately NOT
+      // the funnel's own completedUsers, see StageFunnel's leadsGenerated
+      // doc comment.
+      getUniqueLeadCount(op, range, [conversion.key]),
     ]);
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
 
   if (error || !result || uniqueLeads === null) {
-    return <ErrorCard message={`Clic WhatsApp: ${error}`} />;
+    return <ErrorCard message={`${conversion.label}: ${error}`} />;
   }
 
   const stages: FunnelStage[] = result.steps.map((s) => ({
@@ -168,7 +189,7 @@ async function WhatsappFunnel({ config, range }: { config: ClientConfig; range: 
 
   return (
     <StageFunnel
-      title="Clic WhatsApp"
+      title={conversion.label}
       stages={stages}
       overallConversionRate={result.overallConversionRate}
       leadsGenerated={uniqueLeads}
@@ -177,118 +198,117 @@ async function WhatsappFunnel({ config, range }: { config: ClientConfig; range: 
 }
 
 /**
- * Embudos 2 y 3 — visita al sitio → visita a la página del formulario →
- * lo llenan. Ensamblado a mano desde tres endpoints reales (no hay un solo
- * `/funnel` que lo resuelva, ver nota en `StageFunnel`), todo en sesiones
- * para que las tres etapas compartan unidad.
+ * One per form conversion — visita al sitio → visita a la página del
+ * formulario → lo llenan. Ensamblado a mano desde tres fuentes reales (no
+ * hay un solo `/funnel` que lo resuelva, ver nota en `StageFunnel`), todo
+ * en sesiones para que las etapas compartan unidad. Without a `pagePath`
+ * configured there's no middle stage to show, so it's a 2-stage funnel.
  */
 async function PageFormFunnel({
-  config,
-  title,
-  pagePath,
-  pageStageLabel,
-  conversionStageLabel,
+  op,
+  conversion,
   conversions,
   range,
-  note,
 }: {
-  config: ClientConfig;
-  title: string;
-  pagePath: string;
-  pageStageLabel: string;
-  conversionStageLabel: string;
+  op: OpenPanelCreds;
+  conversion: Conversion;
   /**
    * Final-stage count, passed in already computed from Postgres by the
-   * caller (see `LeadsPage` below) instead of fetched here from OpenPanel.
-   * Both used to independently query `getUniqueLeadCount` against the
-   * OpenPanel event, which quietly disagreed by 1 with the Leads page's
-   * Postgres-row-count for the same source (13 vs. 12) — Postgres is now
-   * the single source of truth for "how many people submitted this form",
-   * matching the Leads page exactly.
+   * caller (see `FunnelsPage` below) instead of fetched here from
+   * OpenPanel — Postgres is the single source of truth for "how many people
+   * submitted this form", matching the Leads page exactly (the OpenPanel
+   * event count used to disagree with it by 1, e.g. 13 vs. 12).
    */
   conversions: number;
   range: ResolvedRange;
-  note?: string;
 }) {
   let stages: FunnelStage[] | null = null;
   let overallConversionRate = 0;
   let error: string | null = null;
+  const pagePath = conversion.pagePath;
 
   try {
     const [overview, pages] = await Promise.all([
-      getOverview(config.openpanel, range),
-      getPagePerformance(config.openpanel, range, 100),
+      getOverview(op, range),
+      pagePath ? getPagePerformance(op, range, 100) : Promise.resolve(null),
     ]);
 
     const totalSessions = overview.summary.total_sessions;
-    const pageSessions = pages.pages.find((p) => p.path === pagePath)?.sessions ?? 0;
-
-    stages = [
-      { label: "Visitas totales", value: totalSessions },
-      { label: pageStageLabel, value: pageSessions },
-      { label: conversionStageLabel, value: conversions },
-    ];
+    stages = [{ label: "Visitas totales", value: totalSessions }];
+    if (pagePath) {
+      const pageSessions = pages?.pages.find((p) => p.path === pagePath)?.sessions ?? 0;
+      stages.push({ label: `Vista de ${pagePath}`, value: pageSessions });
+    }
+    stages.push({ label: "Leads registrados", value: conversions });
     overallConversionRate = totalSessions > 0 ? (conversions / totalSessions) * 100 : 0;
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
 
   if (error || !stages) {
-    return <ErrorCard message={`${title}: ${error}`} />;
+    return <ErrorCard message={`${conversion.label}: ${error}`} />;
   }
 
   return (
     <StageFunnel
-      title={title}
+      title={conversion.label}
       stages={stages}
       overallConversionRate={overallConversionRate}
-      note={note}
     />
   );
 }
 
 async function LeadsJourney({
-  config,
+  op,
+  slug,
   range,
-  postgresFormCount,
-  postgresCatalogCount,
+  conversions,
+  formCounts,
+  formDaily,
 }: {
-  config: ClientConfig;
+  op: OpenPanelCreds;
+  slug: string;
   range: ResolvedRange;
-  /** From Postgres, fetched once by the caller — see `LeadsPage` below. */
-  postgresFormCount: number;
-  postgresCatalogCount: number;
+  conversions: Conversion[];
+  /** Postgres row count per form conversion key, fetched once by the caller. */
+  formCounts: Map<string, number>;
+  /** Postgres row count per `${day}|${key}`, same source. */
+  formDaily: Map<string, number>;
 }) {
   let stages: JourneyStage[] | null = null;
   let dailyChartData: Record<string, string | number>[] = [];
   let error: string | null = null;
+  const eventConversions = conversions.filter((c) => c.kind === "event");
 
   try {
-    const [overview, daily, whatsappLeads] = await Promise.all([
-      getOverview(config.openpanel, range),
-      getDailyEventCounts(config.openpanel, range, LEAD_EVENTS),
-      // Unique converting people across the whole range — deliberately
-      // NOT `daily`'s per-day counts summed together, which would
-      // double-count anyone who converted on more than one day. See
+    const [overview, daily, eventLeadCounts] = await Promise.all([
+      getOverview(op, range),
+      eventConversions.length > 0
+        ? getDailyEventCounts(
+            op,
+            range,
+            eventConversions.map((c) => c.key),
+          )
+        : Promise.resolve([]),
+      // Unique converting people across the whole range, per event —
+      // deliberately NOT `daily`'s per-day counts summed together, which
+      // would double-count anyone who converted on more than one day. See
       // getUniqueLeadCount's doc comment.
-      getUniqueLeadCount(config.openpanel, range, ["whatsapp_click"]),
+      Promise.all(eventConversions.map((c) => getUniqueLeadCount(op, range, [c.key]))),
     ]);
-    // Impresiones: no ad/GSC account connected yet, so this stage is
-    // simulated — spend-derived ad impressions + SEO impressions, the same
-    // mock sources the Publicidad/SEO pages already use.
-    const ads = getAdsOverview(config.slug, range);
-    const seo = getSeoOverview(config.slug, range);
+    // Impresiones: simulated — spend-derived ad impressions + SEO
+    // impressions from the mock sources (swapping both halves to real is
+    // still a pending follow-up, see CLAUDE.md "Not yet done").
+    const ads = getAdsOverview(slug, range);
+    const seo = getSeoOverview(slug, range);
     const impressions = ads.impressions + seo.impressions;
 
-    // Same formula as the Leads page's "Total de leads" card: WhatsApp
-    // (unique OpenPanel event) + formulario + catálogo (Postgres rows) —
-    // previously this stage used `getUniqueLeadCount` over
-    // whatsapp_click+form_submitted together (a deduped OpenPanel-only
-    // union, excluding catalog_download entirely), which quietly disagreed
-    // with the Leads page's total (211 vs. 229 for the same 30-day range).
-    // Postgres is the source of truth for form/catalog leads app-wide (it's
-    // where the actual name/email/phone lives) — this stage now matches it.
-    const leads = whatsappLeads + postgresFormCount + postgresCatalogCount;
+    // Same formula as the Leads page's "Total de leads" card: unique people
+    // per event conversion (OpenPanel) + rows per form conversion
+    // (Postgres, the source of truth for form leads app-wide — it's where
+    // the actual name/email/phone lives).
+    const formTotal = [...formCounts.values()].reduce((sum, n) => sum + n, 0);
+    const leads = eventLeadCounts.reduce((sum, n) => sum + n, 0) + formTotal;
 
     stages = [
       {
@@ -305,14 +325,21 @@ async function LeadsJourney({
       {
         label: "Leads",
         value: leads,
-        hint: "WhatsApp + formulario + catálogo — mismo total que la pestaña Leads",
+        hint: `${conversions.map((c) => c.label).join(" + ")} — mismo total que la pestaña Leads`,
       },
     ];
-    dailyChartData = daily.map((d) => ({
-      date: d.date,
-      whatsapp_click: d.byEvent.whatsapp_click ?? 0,
-      form_submitted: d.byEvent.form_submitted ?? 0,
-    }));
+
+    const dailyByDate = new Map(daily.map((d) => [d.date, d]));
+    dailyChartData = enumerateDays(range).map((date) => {
+      const row: Record<string, string | number> = { date };
+      for (const c of conversions) {
+        row[c.key] =
+          c.kind === "event"
+            ? (dailyByDate.get(date)?.byEvent[c.key] ?? 0)
+            : (formDaily.get(`${date}|${c.key}`) ?? 0);
+      }
+      return row;
+    });
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -326,31 +353,36 @@ async function LeadsJourney({
       <JourneyIndicator stages={stages} />
       <Section title="Leads por día">
         <p className="-mt-1 mb-3 text-xs text-muted-foreground">
-          Personas únicas por día (clic WhatsApp + formulario de contacto) — la misma
-          persona convirtiendo en más de un día se cuenta en cada uno, por eso la suma
-          de las barras no coincide exactamente con el total de arriba. Tampoco incluye
-          descargas de catálogo, aunque el total de arriba sí las cuenta — esta gráfica
-          es solo para ver la tendencia diaria, no para sumar contra el indicador.
+          Por fuente. Los eventos cuentan personas únicas por día y los formularios cuentan
+          leads recibidos — la misma persona convirtiendo en más de un día se cuenta en cada
+          uno, por eso la suma de las barras no coincide exactamente con el total de arriba.
         </p>
-        <StackedBars data={dailyChartData} series={LEAD_SERIES} height={220} />
+        <StackedBars
+          data={dailyChartData}
+          series={conversions.map((c, i) => ({ key: c.key, label: c.label, color: seriesColor(i) }))}
+          height={220}
+        />
       </Section>
     </>
   );
 }
 
 /**
- * "Detalle del embudo de WhatsApp" — where/when WhatsApp clicks happen,
- * one level deeper than the funnel's pass/fail count above. Raw-count
- * based, not deduped by person (see `getEventDetail`'s doc comment) — the
- * question here is "which pages/states/hours generate clicks", which is
- * naturally a count of actions.
+ * "Detalles de {conversión}" — where/when the main event conversion (the
+ * first one configured) happens, one level deeper than the funnel's
+ * pass/fail count above. Raw-count based, not deduped by person (see
+ * `getEventDetail`'s doc comment) — the question here is "which
+ * pages/states/hours generate clicks", which is naturally a count of
+ * actions.
  */
-async function WhatsappClickDetail({
-  config,
+async function EventConversionDetail({
+  op,
   range,
+  conversion,
 }: {
-  config: ClientConfig;
+  op: OpenPanelCreds;
   range: ResolvedRange;
+  conversion: Conversion;
 }) {
   let detail: Awaited<ReturnType<typeof getEventDetail>> | null = null;
   let pages: Awaited<ReturnType<typeof getPagePerformance>>["pages"] = [];
@@ -361,8 +393,8 @@ async function WhatsappClickDetail({
     // See ClickablePageBars' doc comment for why this needs its own
     // fetch rather than reusing the click-count rows.
     const [detailResult, pagePerformanceResult] = await Promise.all([
-      getEventDetail(config.openpanel, range, "whatsapp_click"),
-      getPagePerformance(config.openpanel, range, 200),
+      getEventDetail(op, range, conversion.key),
+      getPagePerformance(op, range, 200),
     ]);
     detail = detailResult;
     pages = pagePerformanceResult.pages;
@@ -371,7 +403,7 @@ async function WhatsappClickDetail({
   }
 
   if (error || !detail) {
-    return <ErrorCard message={`Detalle del embudo de WhatsApp: ${error}`} />;
+    return <ErrorCard message={`Detalles de ${conversion.label}: ${error}`} />;
   }
 
   const peakStart = String(detail.peakHour).padStart(2, "0");
@@ -388,7 +420,7 @@ async function WhatsappClickDetail({
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between">
         <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          Detalles del embudo de Whatsapp
+          Detalles de {conversion.label}
         </h2>
         <span className="tabular text-xs text-muted-foreground">
           {detail.totalEvents.toLocaleString("es-MX")} clics en el rango
@@ -446,8 +478,16 @@ export default async function FunnelsPage({
 }) {
   const { client } = await params;
   const range = resolveRange(await searchParams);
+  const header = (connected: boolean | null) => (
+    <PageHeader
+      eyebrow="Analytics en vivo · OpenPanel"
+      title="Funnels"
+      description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}.`}
+      action={connected === null ? undefined : <SourceStatusBadge connected={connected} />}
+    />
+  );
 
-  let config: ClientConfig | null = null;
+  let config: Awaited<ReturnType<typeof getClientConfig>> | null = null;
   let configError: string | null = null;
   try {
     config = await getClientConfig(client);
@@ -458,81 +498,86 @@ export default async function FunnelsPage({
   if (!config) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader eyebrow="Analytics en vivo · OpenPanel" title="Funnels" />
+        {header(false)}
         <ErrorCard message={configError ?? "Sin datos"} />
       </div>
     );
   }
 
+  const op = config.openpanel;
+  const { conversions } = config;
+  if (!op || conversions.length === 0) {
+    return (
+      <div className="flex flex-col gap-6">
+        {header(null)}
+        <NotConnected client={client} integration={op ? "conversions" : "openpanel"} />
+      </div>
+    );
+  }
+
   // Fetched once here, at the page level, and threaded down to
-  // LeadsJourney + both PageFormFunnel calls — see those components' doc
-  // comments for why they no longer each independently ask OpenPanel for
-  // this. Left at 0 (not error-blocking) if Postgres is unreachable: the
-  // page still has real OpenPanel data to show for the WhatsApp side.
-  let postgresFormCount = 0;
-  let postgresCatalogCount = 0;
+  // LeadsJourney + every PageFormFunnel — see those components' doc
+  // comments for why they don't each independently ask OpenPanel for this.
+  // Left empty (not error-blocking) if Postgres is unreachable: the page
+  // still has real OpenPanel data to show for the event side.
+  const formConversions = conversions.filter((c) => c.kind === "form");
+  const formCounts = new Map(formConversions.map((c) => [c.key, 0]));
+  const formDaily = new Map<string, number>();
   try {
     const leads = await getLeadsFromDb(client, range);
-    postgresFormCount = leads.filter((l) => l.source === "form_submitted").length;
-    postgresCatalogCount = leads.filter((l) => l.source === "catalog_download").length;
+    for (const lead of leads) {
+      if (!formCounts.has(lead.source)) continue;
+      formCounts.set(lead.source, (formCounts.get(lead.source) ?? 0) + 1);
+      // UTC day, same bucketing as getDailyEventCounts' OpenPanel side.
+      const dayKey = `${lead.createdAt.slice(0, 10)}|${lead.source}`;
+      formDaily.set(dayKey, (formDaily.get(dayKey) ?? 0) + 1);
+    }
   } catch {
     // leave at 0
   }
 
+  const mainEvent = conversions.find((c) => c.kind === "event");
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        eyebrow="Analytics en vivo · OpenPanel"
-        title="Funnels"
-        description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}.`}
-        action={<SourceStatusBadge connected />}
-      />
+      {header(true)}
 
       <LeadsJourney
-        config={config}
+        op={op}
+        slug={config.slug}
         range={range}
-        postgresFormCount={postgresFormCount}
-        postgresCatalogCount={postgresCatalogCount}
+        conversions={conversions}
+        formCounts={formCounts}
+        formDaily={formDaily}
       />
 
       <section className="grid gap-6 lg:grid-cols-3">
-        <WhatsappFunnel config={config} range={range} />
-        <PageFormFunnel
-          config={config}
-          title="Formulario de contacto"
-          pagePath="/contactanos"
-          pageStageLabel="Vista de /contactanos"
-          conversionStageLabel="Formulario enviado"
-          conversions={postgresFormCount}
-          range={range}
-        />
-        <PageFormFunnel
-          config={config}
-          title="Descarga de catálogo"
-          pagePath="/catalogo-lumi"
-          pageStageLabel="Vista de /catalogo-lumi"
-          conversionStageLabel="Catálogo descargado"
-          conversions={postgresCatalogCount}
-          range={range}
-          note="Sí cuenta en el indicador de arriba — el total de leads incluye
-            clics de WhatsApp, formulario de contacto y descarga de catálogo."
-        />
+        {conversions.map((c) =>
+          c.kind === "event" ? (
+            <EventFunnel key={c.key} op={op} range={range} conversion={c} />
+          ) : (
+            <PageFormFunnel
+              key={c.key}
+              op={op}
+              conversion={c}
+              conversions={formCounts.get(c.key) ?? 0}
+              range={range}
+            />
+          ),
+        )}
       </section>
 
-      <WhatsappClickDetail config={config} range={range} />
+      {mainEvent && <EventConversionDetail op={op} range={range} conversion={mainEvent} />}
 
       <Section title="Nota metodológica">
         <p className="text-sm leading-relaxed text-muted-foreground">
-          WhatsApp mide hasta &quot;le dio clic para hablar&quot; — no hay forma de
-          saber si esa conversación cerró venta sin que el vendedor lo capture en el
-          CRM manualmente. Los embudos de formulario y catálogo son de 3 pasos
-          (visita al sitio → visita a la página → conversión) ensamblados desde
-          tráfico + eventos, no de un único funnel de sesión como el de WhatsApp —
-          ver <code className="text-xs">lib/openpanel.ts</code> si necesitas el
-          detalle técnico. Los eventos solo cuentan envíos (sin datos personales) —
-          el nombre/email de cada contacto vive en el plugin CF7DB de WordPress,
-          cruzable por fecha/hora con estos conteos. A futuro, cruzar eso contra el
-          CRM (Twenty) da un funnel real hasta venta cerrada.
+          Las conversiones por evento (por ejemplo, un clic a WhatsApp) miden hasta la acción en
+          el sitio — no hay forma de saber si esa conversación cerró venta sin que el vendedor
+          lo capture en el CRM. Los embudos de formulario son de 3 pasos (visita al sitio →
+          visita a la página del formulario → lead registrado) armados con el tráfico de
+          OpenPanel y los leads que llegan al webhook, no un único funnel de sesión como los de
+          evento. Los leads de formulario guardan nombre, correo y teléfono en la pestaña Leads.
+          Las conversiones de este dashboard se editan en Configuración.
         </p>
       </Section>
     </div>

@@ -7,6 +7,7 @@ import { percentDelta, previousRange, resolveRange } from "@/lib/date-range";
 import { ErrorCard, PageHeader, Section, SourceStatusBadge, StatCard } from "@/components/ui-kit";
 import { TrendArea } from "@/components/charts";
 import { TableScroll } from "@/components/table-scroll";
+import { NotConnected } from "@/components/not-connected";
 
 export const dynamic = "force-dynamic";
 
@@ -29,17 +30,23 @@ export default async function SeoPage({
   const prev = previousRange(range);
 
   let error: string | null = null;
+  let notConnected = false;
   let overview: Awaited<ReturnType<typeof getSeoOverview>> | null = null;
   let prevOverview: Awaited<ReturnType<typeof getSeoOverview>> | null = null;
   let queries: Awaited<ReturnType<typeof getSeoQueries>> = [];
 
   try {
     const config = await getClientConfig(client);
-    [overview, prevOverview, queries] = await Promise.all([
-      getSeoOverview(config.gscSiteUrl, range),
-      getSeoOverview(config.gscSiteUrl, prev),
-      getSeoQueries(config.gscSiteUrl, range),
-    ]);
+    const siteUrl = config.gscSiteUrl;
+    if (!siteUrl) {
+      notConnected = true;
+    } else {
+      [overview, prevOverview, queries] = await Promise.all([
+        getSeoOverview(siteUrl, range),
+        getSeoOverview(siteUrl, prev),
+        getSeoQueries(siteUrl, range),
+      ]);
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : String(e);
   }
@@ -50,10 +57,12 @@ export default async function SeoPage({
         eyebrow="Google Search Console"
         title="SEO"
         description={`${format(parseISO(range.startDate), "d MMM", { locale: es })} — ${format(parseISO(range.endDate), "d MMM yyyy", { locale: es })}. Conectado directo a Search Console (cuenta de servicio, sin pasar por OpenPanel) — ver lib/gsc.ts.`}
-        action={<SourceStatusBadge connected={!error} />}
+        action={notConnected ? undefined : <SourceStatusBadge connected={!error} />}
       />
 
-      {error || !overview ? (
+      {notConnected ? (
+        <NotConnected client={client} integration="gsc" />
+      ) : error || !overview ? (
         <ErrorCard message={error ?? "Sin datos"} />
       ) : (
         <>

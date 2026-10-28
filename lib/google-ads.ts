@@ -59,14 +59,18 @@ function assertConfigured() {
 
 let api: GoogleAdsApi | null = null;
 
-function getCustomer(customerId: string) {
+function getApi(): GoogleAdsApi {
   assertConfigured();
   api ??= new GoogleAdsApi({
     client_id: CLIENT_ID!,
     client_secret: CLIENT_SECRET!,
     developer_token: DEVELOPER_TOKEN!,
   });
-  return api.Customer({
+  return api;
+}
+
+function getCustomer(customerId: string) {
+  return getApi().Customer({
     customer_id: customerId,
     refresh_token: REFRESH_TOKEN!,
     login_customer_id: customerId,
@@ -83,6 +87,47 @@ interface CampaignMetricsRow {
     conversions_value?: number | null;
     impressions?: number | null;
   };
+}
+
+// --- Accounts the shared OAuth refresh token can reach ---
+
+export interface AdsAccount {
+  customerId: string;
+  /** null when the account's name couldn't be read (e.g. it's only reachable through a manager). */
+  name: string | null;
+  isManager: boolean;
+}
+
+/**
+ * Every Google Ads account the shared refresh token can see — what the
+ * Configuración page offers as choices instead of a typed customer id.
+ * Names are fetched per account (the listing endpoint only returns ids);
+ * one that fails to load is still listed, by id. Capped at 50 accounts.
+ */
+export async function listAdsAccounts(): Promise<AdsAccount[]> {
+  const res = await getApi().listAccessibleCustomers(REFRESH_TOKEN!);
+  const ids = (res.resource_names ?? [])
+    .map((r) => r.replace(/^customers\//, ""))
+    .filter(Boolean)
+    .slice(0, 50);
+
+  const accounts = await Promise.all(
+    ids.map(async (customerId): Promise<AdsAccount> => {
+      try {
+        const rows = (await getCustomer(customerId).query(`
+          SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1
+        `)) as { customer?: { descriptive_name?: string | null; manager?: boolean | null } }[];
+        return {
+          customerId,
+          name: rows[0]?.customer?.descriptive_name || null,
+          isManager: Boolean(rows[0]?.customer?.manager),
+        };
+      } catch {
+        return { customerId, name: null, isManager: false };
+      }
+    }),
+  );
+  return accounts.sort((a, b) => (a.name ?? a.customerId).localeCompare(b.name ?? b.customerId));
 }
 
 // --- Overview: totals for the range + a daily series ---
