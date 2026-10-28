@@ -874,11 +874,19 @@ need to change, and delete that page's generator functions from
 
 ## Not yet done
 - **NUMA Ingeniería (`numa` slug) was added to the `clients` registry
-  2026-08-18 but has no real credentials yet** — since 2026-10-28 it's
-  connected from its Configuración page, not env vars (its Google Ads
-  account, "Numa - FTM · 406-703-2837", already shows in the account
-  list; see the 2026-10-28 entry). The notes below about env vars are
-  from before that. It already shows up correctly in the login
+  2026-08-18** — partially connected on 2026-10-28 from its Configuración
+  page (the first real use of it): site `https://numa.com.mx` + favicon,
+  Google Ads "Numa - FTM · 406-703-2837" (tested: $3,582 spend / 99
+  conversions in 30 days), and one event conversion `formulario_enviado`
+  (the only conversion-like event its OpenPanel project `numa` records).
+  **Still missing, both need someone outside this app**: an OpenPanel
+  **Read** client for project `numa` (its OpenPanel project only has the
+  default write client — create it at openpanel.pixolab.com.mx → Numa →
+  Settings → Clients, then paste it in Configuración → OpenPanel), and
+  Search Console access (the service account can only see
+  lumiservicios.com and pixolab.com.mx — NUMA's property owner must add
+  it as a user). Leads webhook not set up (no site-side GTM snippet). The
+  notes below about env vars are from before 2026-10-28. It already shows up correctly in the login
   picker (favicon-less, falls back to the "N" letter avatar) and in the
   Topbar once you're on `/numa/*`. To make it real: same setup as
   Lumiservicios — an OpenPanel "Read" client for NUMA's existing OpenPanel
