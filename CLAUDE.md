@@ -376,7 +376,19 @@ need to change, and delete that page's generator functions from
   `getLeadsFromDb`), reading/writing a `leads` table in Postgres. Verified
   live end-to-end (insert + select round-trip via `curl` against
   `/api/leads/ingest`, then confirmed via `psql`) before wiring the page.
-  - **Where the database lives**: Railway, not Coolify — project
+  - **UPDATE 2026-10-28 — no longer on Railway.** The database now lives
+    as the `pixolab-analytics-postgres` Coolify resource (uuid
+    `qxgbhzlyt15spit3ud4uiibp`) in the "Pixolab Analytics" project on the
+    same `Pixolab-apps` server as the app, **private** (no public port;
+    the app's `DATABASE_URL` in Coolify uses the internal host
+    `qxgbhzlyt15spit3ud4uiibp:5432`). Path was Railway → a public Coolify
+    resource on `pixolab-infra` (2026-08-25) → here. Current details and
+    the local-dev tunnel note are in `_infra/README.md`; the Railway text
+    that follows is history. A dev machine reaches the private DB through
+    an SSH tunnel: run `pnpm db:tunnel` (`scripts/db-tunnel.sh`) in its own
+    terminal and keep `.env.local`'s `DATABASE_URL` on `127.0.0.1:5433` —
+    note that is the **real production DB**, not a copy.
+  - **(Historical) Where the database lived**: Railway, not Coolify — project
     "Pixolab Dashboards" (shared across every future client dashboard,
     not just Lumiservicios; tenancy is a `client` column, see
     `db/migrations/001_leads.sql`), provisioned directly from this
